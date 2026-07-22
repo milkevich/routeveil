@@ -1,6 +1,43 @@
-# Routeveil
+<div align="center">
+  <img width="220" alt="favicon" src="https://github.com/user-attachments/assets/83315c80-4b6e-4328-a048-3afccb4adf77" />
 
-Per-navigation page and full-screen overlay transitions for React Router, with no animation code inside page components.
+  <h1>Routeveil</h1>
+
+  <p>Page and full-screen overlay transitions for React Router.</p>
+
+  <p>
+    Per-navigation effects, typed options, custom transitions, and no animation logic inside page components.
+  </p>
+
+  <p>
+    <a href="https://www.npmjs.com/package/routeveil">
+      <img src="https://img.shields.io/npm/v/routeveil?style=flat-square&label=npm" alt="npm version" />
+    </a>
+    <a href="https://www.npmjs.com/package/routeveil">
+      <img src="https://img.shields.io/npm/dm/routeveil?style=flat-square" alt="npm downloads" />
+    </a>
+    <a href="./LICENSE">
+      <img src="https://img.shields.io/npm/l/routeveil?style=flat-square" alt="license" />
+    </a>
+    <a href="https://github.com/milkevich/routeveil">
+      <img src="https://img.shields.io/github/stars/milkevich/routeveil?style=flat-square" alt="GitHub stars" />
+    </a>
+  </p>
+</div>
+
+---
+
+## Why Routeveil
+
+Routeveil wraps the part of your application rendered by React Router and coordinates the complete transition lifecycle:
+
+1. animate the current route out
+2. commit navigation while the view is hidden
+3. wait for the next route to render
+4. animate the next route in
+5. restore interaction and clean up
+
+Persistent UI can stay outside `RouteveilView`, while overlay transitions render through a `document.body` portal and cover the complete viewport.
 
 ```tsx
 import {
@@ -12,24 +49,46 @@ import {
 } from 'routeveil/react-router'
 ```
 
-Routeveil animates one persistent view around whatever React Router renders. The current page exits, navigation commits while it is hidden, and the same wrapper brings the next page in. Overlay transitions render through a `document.body` portal and cover the complete viewport.
+## Features
 
-## Install
+- Per-link and programmatic transitions
+- Page transitions scoped to `RouteveilView`
+- Full-screen overlay transitions
+- Typed transition-specific options
+- Cursor-aware radial effects
+- Preview transitions without navigation
+- Custom transition registry
+- Reduced-motion support
+- Native behavior for external links and modifier clicks
+- No animation code inside page components
+
+## Installation
 
 ```bash
-npm install routeveil react react-dom react-router-dom
+npm install routeveil
 ```
 
-Install the npm package as `routeveil`. Its public API is intentionally exposed
-only from `routeveil/react-router`; the package root has no entry point.
+Routeveil expects React, React DOM, and React Router DOM in the consuming application.
 
-## Declarative router
+The public API is exposed from:
 
-Keep persistent UI outside `RouteveilView`:
+```ts
+routeveil/react-router
+```
+
+The package root intentionally has no runtime entry point.
+
+## Quick start
+
+Keep persistent interface outside `RouteveilView`:
 
 ```tsx
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import {
+  BrowserRouter,
+  Route,
+  Routes,
+} from 'react-router-dom'
 import {
   RouteveilProvider,
   RouteveilView,
@@ -59,15 +118,70 @@ createRoot(document.getElementById('root')!).render(
 )
 ```
 
-The header and footer stay mounted. Move them inside `RouteveilView` if the whole layout should animate.
+The header and footer remain mounted while the route view transitions. Move them inside `RouteveilView` when the entire layout should animate.
 
-## Data router and layout routes
+## Navigate with a transition
 
-With `createBrowserRouter`, leave `RouteveilView` empty. It renders React Router’s `Outlet` internally.
+```tsx
+import { RouteveilLink } from 'routeveil/react-router'
+
+<RouteveilLink
+  to="/about"
+  transition="slide"
+  transitionOptions={{ direction: 'left' }}
+>
+  About
+</RouteveilLink>
+```
+
+Each navigation chooses its own transition and options:
+
+```tsx
+<RouteveilLink
+  to="/projects"
+  transition="pixel"
+  transitionOptions={{
+    origin: 'cursor',
+    color: '#111111',
+    columns: 18,
+    rows: 12,
+  }}
+>
+  Projects
+</RouteveilLink>
+
+<RouteveilLink
+  to="/contact"
+  transition="tunnel"
+  transitionOptions={{
+    origin: 'cursor',
+    color: '#000000',
+    coverDuration: 520,
+    revealDuration: 680,
+  }}
+>
+  Contact
+</RouteveilLink>
+```
+
+Omit `transition` to use ordinary React Router navigation:
+
+```tsx
+<RouteveilLink to="/about">
+  About without animation
+</RouteveilLink>
+```
+
+## Data routers and layout routes
+
+With `createBrowserRouter`, leave `RouteveilView` empty. It renders React Router's `Outlet` internally.
 
 ```tsx
 import { createRoot } from 'react-dom/client'
-import { RouterProvider, createBrowserRouter } from 'react-router-dom'
+import {
+  RouterProvider,
+  createBrowserRouter,
+} from 'react-router-dom'
 import {
   RouteveilProvider,
   RouteveilView,
@@ -99,94 +213,13 @@ createRoot(document.getElementById('root')!).render(
 )
 ```
 
-## Navigate with a transition
+## Programmatic navigation
 
-Every navigation selects its own effect:
-
-```tsx
-<RouteveilLink
-  to="/about"
-  transition="slide"
-  transitionOptions={{ direction: 'up' }}
->
-  About
-</RouteveilLink>
-
-<RouteveilLink
-  to="/archive"
-  transition="spin"
-  transitionOptions={{ direction: 'right' }}
->
-  Archive
-</RouteveilLink>
-
-<RouteveilLink
-  to="/journal"
-  transition="rotate"
-  transitionOptions={{ direction: 'left' }}
-  smoothScrollToTop
->
-  Journal
-</RouteveilLink>
-
-<RouteveilLink
-  to="/projects"
-  transition="pixel"
-  transitionOptions={{
-    origin: 'cursor',
-    color: '#17151c',
-    columns: 18,
-    rows: 12,
-  }}
->
-  Projects
-</RouteveilLink>
-
-<RouteveilLink
-  to="/contact"
-  transition="tunnel"
-  transitionOptions={{
-    origin: 'cursor',
-    color: '#6d3df5',
-    coverDuration: 520,
-    revealDuration: 680,
-  }}
->
-  Contact
-</RouteveilLink>
-
-<RouteveilLink
-  to="/story"
-  transition="clock"
-  transitionOptions={{
-    origin: 'cursor',
-    color: '#17151c',
-    startAngle: -90,
-  }}
->
-  Story
-</RouteveilLink>
-```
-
-For `clock`, `origin: 'cursor'` starts the radial sweep at the link’s click
-position. It remains centered by default; `origin: 'center'` also keeps it
-fixed at the viewport center explicitly.
-
-After a transitioned navigation, Routeveil resets the viewport to the top
-instantly by default—even when the page uses CSS smooth scrolling. Add
-`smoothScrollToTop` to a link to opt into a smooth reset. If
-`preventScrollReset` is also set, it takes precedence and Routeveil leaves the
-scroll position unchanged.
-
-Omit `transition` to get ordinary React Router navigation:
+`useRouteveilNavigate` resolves after the complete transition finishes.
 
 ```tsx
-<RouteveilLink to="/about">About without animation</RouteveilLink>
-```
+import { useRouteveilNavigate } from 'routeveil/react-router'
 
-Programmatic navigation uses the same rule and resolves after the complete transition:
-
-```tsx
 function ContinueButton() {
   const navigate = useRouteveilNavigate()
 
@@ -195,9 +228,13 @@ function ContinueButton() {
       onClick={() => {
         void navigate('/success', {
           transition: 'clock',
-          transitionOptions: { origin: 'cursor' },
+          transitionOptions: {
+            origin: 'center',
+          },
           smoothScrollToTop: true,
-          state: { source: 'onboarding' },
+          state: {
+            source: 'onboarding',
+          },
         })
       }}
     >
@@ -207,16 +244,13 @@ function ContinueButton() {
 }
 ```
 
-The hook accepts the same `smoothScrollToTop` and `preventScrollReset` options
-as `RouteveilLink`. Programmatic navigation has no click coordinates, so
-`clock` falls back to the viewport center when `origin: 'cursor'` is requested.
-
 ## Preview without navigating
 
-`useRouteveilTransition` plays the complete exit-and-enter or cover-and-reveal
-lifecycle while keeping the current location and mounted route unchanged:
+`useRouteveilTransition` plays a transition on the current route without changing the URL, history, mounted route, or scroll position.
 
 ```tsx
+import { useRouteveilTransition } from 'routeveil/react-router'
+
 function TransitionPreview() {
   const playTransition = useRouteveilTransition()
 
@@ -229,7 +263,7 @@ function TransitionPreview() {
             y: event.clientY,
           },
           transitionOptions: {
-            color: '#17151c',
+            color: '#111111',
             origin: 'cursor',
           },
         })
@@ -241,58 +275,99 @@ function TransitionPreview() {
 }
 ```
 
-## Built-ins
+## Built-in transitions
 
-Routeveil includes twenty transitions. The eight page transitions animate only `RouteveilView`:
+Routeveil includes 20 built-in transitions.
 
-| Transition | Behavior and options |
-| --- | --- |
-| `fade` | A quiet opacity crossfade. |
-| `blur` | Blurs the complete route view while exit opacity moves from `1` to `0`. |
-| `slide` | Moves the route with `direction: 'up' \| 'down' \| 'left' \| 'right'`. |
-| `spin` | Combines 3D rotation and movement for a scrolling-wheel feel; accepts the same four directions as `slide`. |
-| `rotate` | A restrained 2D wheel turn with `direction: 'left' \| 'right'`. |
-| `bounce` | A soft cinematic depth motion that gently recedes and returns. |
-| `push` | The old route grows toward the viewer while the new route follows from slightly behind. |
-| `pull` | The opposite of `push`: the old route recedes while the larger new route is pulled into place. |
+### Page transitions
 
-`push` and `pull` use matched cinematic timing so their opposite depth movements feel related rather than springy.
+Page transitions animate only the registered `RouteveilView`.
 
-The twelve overlay transitions cover the complete viewport through a body portal:
+| Transition | Description | Options |
+| --- | --- | --- |
+| `fade` | Quiet opacity crossfade | None |
+| `blur` | Blur and opacity transition | None |
+| `slide` | Directional route movement | `direction` |
+| `spin` | 3D rotation with directional movement | `direction` |
+| `rotate` | Restrained 2D wheel turn | `direction` |
+| `bounce` | Soft cinematic depth motion | None |
+| `push` | Old route grows toward the viewer | None |
+| `pull` | Old route recedes as the next route arrives | None |
 
-| Transition | Behavior and options |
-| --- | --- |
-| `pixel` | A uniform field of square tiles. Accepts `columns`, `rows`, `color`, `duration`, `stagger`, and an `origin` of `center`, `cursor`, `random`, or a viewport corner. The centered grid expands past one edge when necessary, keeping every tile square. |
-| `curtain` | Two panels close and open. Accepts `color`, `axis: 'horizontal' \| 'vertical'`, `duration`, and `easing`. |
-| `wipe` | One panel crosses the viewport. Accepts `color`, `direction: 'up' \| 'down' \| 'left' \| 'right'`, `duration`, and `easing`. |
-| `columns` | Flat vertical strips with configurable `columns` or `count`, `direction`, `order`, `color`, `duration`, `stagger`, and `easing`. |
-| `rows` | Flat horizontal strips with configurable `rows` or `count`, `direction`, `order`, `color`, `duration`, `stagger`, and `easing`. |
-| `iris` | An old-film circular aperture. `origin: 'cursor'` uses the click position and falls back to center; `origin: 'center'` is fixed. Its radius uses the farthest viewport corner so cover is complete. Also accepts `color`, `duration`, and `easing`. |
-| `halo` | The opposite of `iris`: a solid circle grows from the cursor or center to cover the viewport, then shrinks to reveal the next route. Accepts the same `color`, `origin: 'cursor' \| 'center'`, `duration`, and `easing` options as `iris`. |
-| `tunnel` | A halo cover followed by an iris reveal, creating a circular tunnel through the route change. Accepts `color`, `origin: 'cursor' \| 'center'`, shared `duration`, phase-specific `coverDuration` and `revealDuration`, and `easing`. |
-| `clock` | A pie-sector sweep from the clicked link when `origin: 'cursor'`, falling back to center when no click position exists; `origin: 'center'` is always centered. Begins at twelve o’clock by default and also accepts `color`, `duration`, `easing`, `direction: 'clockwise' \| 'counterclockwise'`, and `startAngle` in degrees. |
-| `venetian` | Thin dimensional blinds rotate shut and open with perspective and `rotateX` or `rotateY`, unlike flat rows and columns. Accepts `direction: 'horizontal' \| 'vertical'`, `count`, `alternate`, `color`, `duration`, and `stagger`. |
-| `mosaic` | Stable, seeded irregular rectangles grow and rotate into a gap-free cover. Accepts `colors`, `columns`, `rows`, `duration`, `stagger`, `rotation`, `seed`, and `origin: 'cursor' \| 'center' \| 'random'`. Its layout remains fixed for the transition run. |
-| `dissolve` | A stable procedural noise field fills a canvas like film grain, without thousands of DOM nodes. Accepts `color`, `duration`, `grainSize`, `softness`, and `seed`. |
+### Overlay transitions
 
-Every overlay finishes with a fully opaque cover before navigation, then reverses to reveal and cleans up its active animation.
+Overlay transitions cover the complete viewport through a body portal.
+
+| Transition | Description | Main options |
+| --- | --- | --- |
+| `pixel` | Square tile field | `columns`, `rows`, `color`, `duration`, `stagger`, `origin` |
+| `curtain` | Two closing panels | `color`, `axis`, `duration`, `easing` |
+| `wipe` | One panel crossing the viewport | `color`, `direction`, `duration`, `easing` |
+| `columns` | Animated vertical strips | `columns`, `count`, `direction`, `order`, `color`, `duration`, `stagger`, `easing` |
+| `rows` | Animated horizontal strips | `rows`, `count`, `direction`, `order`, `color`, `duration`, `stagger`, `easing` |
+| `iris` | Old-film circular aperture | `color`, `origin`, `duration`, `easing` |
+| `halo` | Expanding solid circle | `color`, `origin`, `duration`, `easing` |
+| `tunnel` | Halo cover with iris reveal | `color`, `origin`, `duration`, `coverDuration`, `revealDuration`, `easing` |
+| `clock` | Radial pie-sector sweep | `color`, `origin`, `duration`, `easing`, `direction`, `startAngle` |
+| `venetian` | Dimensional rotating blinds | `direction`, `count`, `alternate`, `color`, `duration`, `stagger` |
+| `mosaic` | Seeded irregular tile cover | `colors`, `columns`, `rows`, `duration`, `stagger`, `rotation`, `seed`, `origin` |
+| `dissolve` | Procedural film-grain cover | `color`, `duration`, `grainSize`, `softness`, `seed` |
+
+## Typed options
+
+Transition options are selected from the transition name.
+
+```tsx
+import {
+  RouteveilLink,
+  type TransitionOptionsFor,
+} from 'routeveil/react-router'
+
+const slideOptions = {
+  direction: 'left',
+} satisfies TransitionOptionsFor<'slide'>
+
+<RouteveilLink
+  to="/docs"
+  transition="slide"
+  transitionOptions={slideOptions}
+>
+  Documentation
+</RouteveilLink>
+```
+
+Keeping the transition name literal allows TypeScript to catch unsupported option combinations.
 
 ## Custom transitions
 
-Provider transitions extend the built-in registry and intentionally override matching names:
+Custom provider transitions extend the built-in registry and override matching names.
 
 ```tsx
+import { RouteveilProvider } from 'routeveil/react-router'
+
 <RouteveilProvider
   transitions={{
     'brand-fade': {
       type: 'page',
       exit: {
-        keyframes: [{ opacity: 1 }, { opacity: 0 }],
-        options: { duration: 180, fill: 'forwards' },
+        keyframes: [
+          { opacity: 1 },
+          { opacity: 0 },
+        ],
+        options: {
+          duration: 180,
+          fill: 'forwards',
+        },
       },
       enter: {
-        keyframes: [{ opacity: 0 }, { opacity: 1 }],
-        options: { duration: 300, fill: 'both' },
+        keyframes: [
+          { opacity: 0 },
+          { opacity: 1 },
+        ],
+        options: {
+          duration: 300,
+          fill: 'both',
+        },
       },
     },
   }}
@@ -301,17 +376,39 @@ Provider transitions extend the built-in registry and intentionally override mat
 </RouteveilProvider>
 ```
 
-## Behavior and current scope
+## Scroll behavior
 
-- Opening a URL directly or refreshing never animates.
-- Normal React Router `Link` and `navigate` calls remain unanimated.
-- Browser back and forward remain native and unanimated in version one.
-- Modifier clicks, external links, downloads, and non-self targets retain normal anchor behavior.
-- Reduced-motion preferences bypass decorative animation.
-- One active `RouteveilView` is supported per provider.
-- A missing view or unknown transition falls back to safe normal navigation.
-- Concurrent Routeveil requests use an ignore-while-active policy.
-- Next.js, shared-element transitions, cloned route trees, and the browser View Transitions API are not included.
+Transitioned navigation scrolls to the top instantly by default.
+
+Use `smoothScrollToTop` for a smooth reset:
+
+```tsx
+<RouteveilLink
+  to="/journal"
+  transition="rotate"
+  transitionOptions={{ direction: 'left' }}
+  smoothScrollToTop
+>
+  Journal
+</RouteveilLink>
+```
+
+Use `preventScrollReset` to preserve the current position. It takes precedence over `smoothScrollToTop`.
+
+## Reduced motion
+
+When the user prefers reduced motion, Routeveil bypasses decorative animation and safely completes navigation.
+
+## Current scope
+
+- Direct URL loads and refreshes do not animate
+- Standard React Router `Link` and `navigate` calls remain unanimated
+- Browser back and forward remain native and unanimated
+- Modifier clicks, external links, downloads, and non-self targets retain native behavior
+- One active `RouteveilView` is supported per provider
+- Missing views and unknown transitions fall back to safe normal navigation
+- Concurrent Routeveil requests use an ignore-while-active policy
+- Shared-element transitions, cloned route trees, Next.js integration, and the browser View Transitions API are not included
 
 ## Development
 
@@ -323,6 +420,10 @@ npm run test:consumer
 npm run build
 ```
 
-`npm run build` emits the library and type declarations in `dist/`, and the demo in `dist/demo/`.
-`npm run check` runs the complete release gate used automatically before packing.
-# routeveil
+`npm run build` emits the library and declarations to `dist/` and the demo to `dist/demo/`.
+
+`npm run check` runs the complete release gate used before packaging.
+
+## License
+
+MIT
