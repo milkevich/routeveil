@@ -11,8 +11,14 @@
 
 .code-block {
   overflow: hidden;
-  corner-shape: squircle;
-  border-radius: 35px;
+  border-radius: 20px;
+}
+
+@supports (corner-shape: squircle) {
+  .code-block {
+    border-radius: 35px;
+    corner-shape: squircle;
+  }
 }
 
 .code-block__header {

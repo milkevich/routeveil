@@ -295,8 +295,14 @@
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid #e6e6e6;
-  border-radius: 35px;
-  corner-shape: squircle;
+  border-radius: 15px;
+}
+
+@supports (corner-shape: squircle) {
+  .prop-table-wrap {
+    border-radius: 35px;
+    corner-shape: squircle;
+  }
 }
 
 .prop-table-wrap:focus-visible {

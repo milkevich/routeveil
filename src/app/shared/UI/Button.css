@@ -5,13 +5,19 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0px 14px;
-  border-radius: 3.40282e38px;
-  corner-shape: squircle;
+  border-radius: 11px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   transition: background-color 150ms ease, color 150ms ease, transform 100ms ease;
+}
+
+@supports (corner-shape: squircle) {
+  .button {
+    corner-shape: squircle;
+    border-radius: 3.40282e38px;;
+  }
 }
 
 .button--filled {
