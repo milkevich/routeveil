@@ -70,7 +70,7 @@ function HeroCTA() {
           to="/lab"
           transition="tunnel"
           variant='outlined'
-          transitionOptions={{ color: '#ffffff' }}
+          transitionOptions={{ color: '#f4f4f4' }}
         >
           Transitions
         </ButtonLink>
