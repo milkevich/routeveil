@@ -9,7 +9,6 @@ import type {
   ComponentProps,
   FocusEvent,
   KeyboardEvent,
-  MouseEvent,
   ReactElement,
   ReactNode,
 } from 'react'
@@ -92,8 +91,6 @@ export function PixelHeadingCharacter({
   prefix,
   prefixFont = 'none',
   isolate,
-  onMouseEnter,
-  onMouseLeave,
   onFocus,
   onBlur,
   onKeyDown,
@@ -207,6 +204,11 @@ export function PixelHeadingCharacter({
     onFocus?.(event)
   }, [onFocus, startCycling])
 
+  const handleBlur = useCallback((event: FocusEvent<HTMLHeadingElement>) => {
+    stopCycling()
+    onBlur?.(event)
+  }, [onBlur, stopCycling])
+
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLHeadingElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -231,6 +233,7 @@ export function PixelHeadingCharacter({
         )}
         data-mode={mode}
         data-state={isActive || autoPlay ? 'active' : 'idle'}
+        onBlur={handleBlur}
         onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         tabIndex={0}

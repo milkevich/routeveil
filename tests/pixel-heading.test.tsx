@@ -32,7 +32,7 @@ describe('PixelHeadingCharacter', () => {
     expect(heading.querySelectorAll('[class^="font-pixel-"]').length).toBeGreaterThan(1)
   })
 
-  it('cycles a uniform font on hover and reports the active index', () => {
+  it('cycles a uniform font on focus and reports the active index', () => {
     vi.useFakeTimers()
     const onFontIndexChange = vi.fn()
     const view = render(
@@ -48,14 +48,14 @@ describe('PixelHeadingCharacter', () => {
     const heading = view.getByRole('heading', { name: 'Routeveil' })
     const label = view.getByText('Square')
 
-    fireEvent.mouseEnter(heading)
+    fireEvent.focus(heading)
     expect(label).toHaveAttribute('data-visible', 'true')
     act(() => vi.advanceTimersByTime(100))
 
     expect(heading).toHaveClass('font-pixel-grid')
     expect(onFontIndexChange).toHaveBeenLastCalledWith(1)
 
-    fireEvent.mouseLeave(heading)
+    fireEvent.blur(heading)
     expect(label).toHaveAttribute('data-visible', 'false')
   })
 })
