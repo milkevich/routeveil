@@ -1,11 +1,11 @@
 import { RouteveilProvider, RouteveilView } from '../react-router'
-import { DocumentTitle } from './shared/DocumentTitle'
+import { DocumentMetadata } from './shared/DocumentMetadata'
 import { SiteLayout } from './shared/layout/SiteLayout'
 
 export default function App() {
   return (
     <>
-      <DocumentTitle />
+      <DocumentMetadata />
       <RouteveilProvider>
         <SiteLayout>
           <RouteveilView className="route-stage" />

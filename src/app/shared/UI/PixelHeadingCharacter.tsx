@@ -207,21 +207,6 @@ export function PixelHeadingCharacter({
     onFocus?.(event)
   }, [onFocus, startCycling])
 
-  const handleMouseEnter = useCallback((event: MouseEvent<HTMLHeadingElement>) => {
-    startCycling()
-    onMouseEnter?.(event)
-  }, [onMouseEnter, startCycling])
-
-  const handleBlur = useCallback((event: FocusEvent<HTMLHeadingElement>) => {
-    stopCycling()
-    onBlur?.(event)
-  }, [onBlur, stopCycling])
-
-  const handleMouseLeave = useCallback((event: MouseEvent<HTMLHeadingElement>) => {
-    stopCycling()
-    onMouseLeave?.(event)
-  }, [onMouseLeave, stopCycling])
-
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLHeadingElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -246,11 +231,8 @@ export function PixelHeadingCharacter({
         )}
         data-mode={mode}
         data-state={isActive || autoPlay ? 'active' : 'idle'}
-        onBlur={handleBlur}
         onFocus={handleFocus}
         onKeyDown={handleKeyDown}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
         tabIndex={0}
       >
         {prefix && (

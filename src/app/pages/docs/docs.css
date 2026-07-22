@@ -305,10 +305,6 @@
   }
 }
 
-.prop-table-wrap:focus-visible {
-  outline-offset: 4px;
-}
-
 .prop-table {
   width: 100%;
   border-collapse: collapse;

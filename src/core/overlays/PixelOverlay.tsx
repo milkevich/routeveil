@@ -19,13 +19,9 @@ import type { PixelOrigin } from "./pixel-order.js";
 import {
   colorValue,
   choiceValue,
-  finishAnimations,
   finiteInteger,
   finiteNumber,
   overlayFillStyle,
-  setVisualState,
-  startAnimation,
-  stopAnimations,
 } from "./shared.js";
 
 export type PixelOverlayOptions = Readonly<{
@@ -47,6 +43,27 @@ const PIXEL_ORIGINS = [
   "cursor",
 ] as const satisfies readonly PixelOrigin[];
 
+const CELL_RESOLUTION = 8;
+const STEP_COUNT = 4;
+
+type ActiveFrame = {
+  id: number;
+  resolve: () => void;
+};
+
+type PixelPhase = "clear" | "cover" | "reveal";
+
+type PixelFrame = Readonly<{
+  phase: PixelPhase;
+  elapsed: number;
+  delays: readonly number[];
+}>;
+
+type ViewportSize = Readonly<{
+  width: number;
+  height: number;
+}>;
+
 function seedFromId(id: string): number {
   let seed = 0;
   for (let index = 0; index < id.length; index += 1) {
@@ -54,11 +71,6 @@ function seedFromId(id: string): number {
   }
   return seed / 4_294_967_295;
 }
-
-type ViewportSize = Readonly<{
-  width: number;
-  height: number;
-}>;
 
 function readViewportSize(): ViewportSize {
   if (typeof window === "undefined") {
@@ -69,6 +81,19 @@ function readViewportSize(): ViewportSize {
     width: Math.max(0, window.innerWidth),
     height: Math.max(0, window.innerHeight),
   };
+}
+
+function largestDelay(delays: readonly number[]): number {
+  let maximum = 0;
+  for (const delay of delays) {
+    maximum = Math.max(maximum, delay);
+  }
+  return maximum;
+}
+
+function completedSteps(elapsed: number, delay: number, duration: number): number {
+  const progress = Math.min(1, Math.max(0, (elapsed - delay) / duration));
+  return progress >= 1 ? STEP_COUNT : Math.floor(progress * STEP_COUNT);
 }
 
 export function PixelOverlay({
@@ -83,9 +108,10 @@ export function PixelOverlay({
   const origin = choiceValue(pixelOptions?.origin, PIXEL_ORIGINS, "center");
   const duration = finiteNumber(pixelOptions?.duration, 180, 1, 2_000);
   const stagger = finiteNumber(pixelOptions?.stagger, 360, 0, 3_000);
-  const count = columns * rows;
-  const pixelRefs = useRef<Array<HTMLSpanElement | null>>([]);
-  const animationsRef = useRef<Animation[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const activeFrameRef = useRef<ActiveFrame | null>(null);
+  const frameRef = useRef<PixelFrame>({ phase: "clear", elapsed: 0, delays: [] });
   const randomId = useId();
   const randomSeed = useMemo(() => seedFromId(randomId), [randomId]);
   const [viewportSize, setViewportSize] = useState(readViewportSize);
@@ -116,11 +142,6 @@ export function PixelOverlay({
     [columns, rows, viewportSize.height, viewportSize.width],
   );
 
-  const pixels = useMemo(
-    () => Array.from({ length: count }, (_, index) => index),
-    [count],
-  );
-
   const delays = useCallback(() => {
     return createPixelDelays({
       columns,
@@ -143,71 +164,169 @@ export function PixelOverlay({
     viewportSize.width,
   ]);
 
-  const reset = useCallback(() => {
-    stopAnimations(animationsRef.current);
-    setVisualState(pixelRefs.current, {
-      opacity: 0,
-      transform: "scale(0)",
-      transformOrigin: "center",
-    });
+  const getContext = useCallback(() => {
+    if (contextRef.current) {
+      return contextRef.current;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return null;
+    }
+
+    try {
+      contextRef.current = canvas.getContext("2d");
+    } catch {
+      contextRef.current = null;
+    }
+    return contextRef.current;
   }, []);
+
+  const draw = useCallback((frame: PixelFrame): boolean => {
+    frameRef.current = frame;
+    const canvas = canvasRef.current;
+    const context = getContext();
+    if (!canvas || !context) {
+      return false;
+    }
+
+    const canvasWidth = columns * CELL_RESOLUTION;
+    const canvasHeight = rows * CELL_RESOLUTION;
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+    }
+
+    canvas.style.backgroundColor = "transparent";
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    context.globalAlpha = 1;
+    if (frame.phase === "clear") {
+      return true;
+    }
+
+    const totalDuration = duration + largestDelay(frame.delays);
+    if (
+      (frame.phase === "cover" && frame.elapsed >= totalDuration) ||
+      (frame.phase === "reveal" && frame.elapsed <= 0)
+    ) {
+      context.fillStyle = color;
+      context.fillRect(0, 0, canvasWidth, canvasHeight);
+      return true;
+    }
+    if (frame.phase === "reveal" && frame.elapsed >= totalDuration) {
+      return true;
+    }
+
+    context.fillStyle = color;
+    for (let index = 0; index < columns * rows; index += 1) {
+      const progressed = completedSteps(
+        frame.elapsed,
+        frame.delays[index] ?? 0,
+        duration,
+      );
+      const level = frame.phase === "cover"
+        ? progressed
+        : STEP_COUNT - progressed;
+      if (level <= 0) {
+        continue;
+      }
+
+      const size = (CELL_RESOLUTION * level) / STEP_COUNT;
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const inset = (CELL_RESOLUTION - size) / 2;
+      context.globalAlpha = level / STEP_COUNT;
+      context.fillRect(
+        column * CELL_RESOLUTION + inset,
+        row * CELL_RESOLUTION + inset,
+        size,
+        size,
+      );
+    }
+    context.globalAlpha = 1;
+    return true;
+  }, [color, columns, duration, getContext, rows]);
+
+  const stop = useCallback(() => {
+    const activeFrame = activeFrameRef.current;
+    if (!activeFrame) {
+      return;
+    }
+
+    cancelAnimationFrame(activeFrame.id);
+    activeFrameRef.current = null;
+    activeFrame.resolve();
+  }, []);
+
+  const animate = useCallback((phase: Exclude<PixelPhase, "clear">) => {
+    stop();
+    const pixelDelays = delays();
+    const totalDuration = duration + largestDelay(pixelDelays);
+    const initialFrame = { phase, elapsed: 0, delays: pixelDelays } as const;
+    const hasContext = draw(initialFrame);
+    const canvas = canvasRef.current;
+
+    if (!hasContext) {
+      if (canvas) {
+        canvas.style.backgroundColor = phase === "cover" ? color : "transparent";
+      }
+      frameRef.current = {
+        phase,
+        elapsed: totalDuration,
+        delays: pixelDelays,
+      };
+      return Promise.resolve();
+    }
+
+    if (typeof requestAnimationFrame !== "function") {
+      draw({ phase, elapsed: totalDuration, delays: pixelDelays });
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      let startedAt: number | null = null;
+      const activeFrame: ActiveFrame = { id: 0, resolve };
+
+      const step = (timestamp: number) => {
+        if (activeFrameRef.current !== activeFrame) {
+          return;
+        }
+
+        startedAt ??= timestamp;
+        const elapsed = Math.min(totalDuration, timestamp - startedAt);
+        draw({ phase, elapsed, delays: pixelDelays });
+
+        if (elapsed >= totalDuration) {
+          activeFrameRef.current = null;
+          resolve();
+          return;
+        }
+
+        activeFrame.id = requestAnimationFrame(step);
+      };
+
+      activeFrameRef.current = activeFrame;
+      activeFrame.id = requestAnimationFrame(step);
+    });
+  }, [color, delays, draw, duration, stop]);
+
+  const reset = useCallback(() => {
+    stop();
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.style.backgroundColor = "transparent";
+    }
+    draw({ phase: "clear", elapsed: 0, delays: [] });
+  }, [draw, stop]);
 
   const cover = useCallback(async () => {
     reset();
-    const pixelDelays = delays();
-    const animations = pixelRefs.current.map((pixel, index) => {
-      if (!pixel) {
-        return null;
-      }
-
-      return startAnimation(
-        pixel,
-        [
-          { opacity: 0, transform: "scale(0)" },
-          { opacity: 1, transform: "scale(1.04)" },
-        ],
-        {
-          duration,
-          delay: pixelDelays[index] ?? 0,
-          easing: "steps(4, end)",
-          fill: "forwards",
-        },
-      );
-    });
-
-    await finishAnimations(animations, animationsRef.current);
-  }, [delays, duration, reset]);
+    await animate("cover");
+  }, [animate, reset]);
 
   const reveal = useCallback(async () => {
-    setVisualState(pixelRefs.current, {
-      opacity: 1,
-      transform: "scale(1.04)",
-      transformOrigin: "center",
-    });
-    stopAnimations(animationsRef.current);
-    const pixelDelays = delays();
-    const animations = pixelRefs.current.map((pixel, index) => {
-      if (!pixel) {
-        return null;
-      }
-
-      return startAnimation(
-        pixel,
-        [
-          { opacity: 1, transform: "scale(1.04)" },
-          { opacity: 0, transform: "scale(0)" },
-        ],
-        {
-          duration,
-          delay: pixelDelays[index] ?? 0,
-          easing: "steps(4, end)",
-          fill: "forwards",
-        },
-      );
-    });
-
-    await finishAnimations(animations, animationsRef.current);
-  }, [delays, duration]);
+    await animate("reveal");
+  }, [animate]);
 
   useImperativeHandle<OverlayAnimationHandle, OverlayAnimationHandle>(
     controllerRef,
@@ -215,12 +334,19 @@ export function PixelOverlay({
     [cover, reset, reveal],
   );
 
-  useEffect(() => reset, [reset]);
+  useEffect(() => {
+    draw(frameRef.current);
+  }, [draw]);
+
+  useEffect(() => () => stop(), [stop]);
 
   return (
-    <div
+    <canvas
       aria-hidden="true"
       data-routeveil-pixel-grid=""
+      height={rows * CELL_RESOLUTION}
+      ref={canvasRef}
+      width={columns * CELL_RESOLUTION}
       style={{
         ...overlayFillStyle,
         inset: "auto",
@@ -228,29 +354,9 @@ export function PixelOverlay({
         top: geometry.offsetY,
         width: geometry.gridWidth,
         height: geometry.gridHeight,
-        display: "grid",
-        gridTemplateColumns: `repeat(${columns}, ${geometry.tileSize}px)`,
-        gridTemplateRows: `repeat(${rows}, ${geometry.tileSize}px)`,
+        display: "block",
+        imageRendering: "pixelated",
       }}
-    >
-      {pixels.map((index) => (
-        <span
-          data-routeveil-pixel=""
-          key={index}
-          ref={(element) => {
-            pixelRefs.current[index] = element;
-          }}
-          style={{
-            width: geometry.tileSize,
-            height: geometry.tileSize,
-            backgroundColor: color,
-            opacity: 0,
-            transform: "scale(0)",
-            transformOrigin: "center",
-            willChange: "transform, opacity",
-          }}
-        />
-      ))}
-    </div>
+    />
   );
 }

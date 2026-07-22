@@ -1,6 +1,6 @@
 import { createRef } from 'react'
 import { act, render } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CurtainOverlay,
   type CurtainOverlayOptions,
@@ -67,10 +67,18 @@ beforeEach(() => {
 
 afterEach(() => {
   browser.restore()
+  vi.restoreAllMocks()
 })
 
 describe('overlay runtime option fallbacks', () => {
   it('defaults an invalid pixel origin to center', async () => {
+    const fillRect = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      clearRect: vi.fn(),
+      fillRect,
+      fillStyle: '',
+      globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D)
     const controller = createRef<OverlayAnimationHandle>()
     const options = withRuntimeValue<PixelOverlayOptions>(
       { columns: 3, duration: 10, rows: 1, stagger: 90 },
@@ -83,10 +91,14 @@ describe('overlay runtime option fallbacks', () => {
     act(() => {
       cover = controller.current!.cover()
     })
-    const animations = browser.animations.slice()
+    act(() => browser.flushFrame())
+    act(() => browser.flushFrame())
 
-    expect(animations.map(animationDelay)).toEqual([90, 0, 90])
-    await finishAnimations(animations, cover)
+    expect(fillRect).toHaveBeenCalledWith(8, 0, 8, 8)
+    expect(fillRect).not.toHaveBeenCalledWith(0, 0, 8, 8)
+    expect(fillRect).not.toHaveBeenCalledWith(16, 0, 8, 8)
+    act(() => controller.current!.reset())
+    await cover
   })
 
   it('defaults invalid wipe and curtain geometry values', () => {

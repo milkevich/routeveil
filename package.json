@@ -13,6 +13,14 @@
     "name": "Gleb",
     "url": "https://github.com/milkevich"
   },
+  "homepage": "https://www.routeveil.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/milkevich/routeveil.git"
+  },
+  "bugs": {
+    "url": "https://github.com/milkevich/routeveil/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [

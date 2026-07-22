@@ -20,7 +20,7 @@ export function DocSection({
       <div className="doc-section__heading">
         <span>{index}</span>
         <PixelHeadingWord onClick={() => {
-          window.location.replace(`#${title.toLowerCase().split(" ").join("-")}`)
+          window.location.replace(`#${id}`)
         }} style={{
           cursor: "pointer",
           display: "flex",
