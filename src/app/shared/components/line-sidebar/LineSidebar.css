@@ -1,0 +1,80 @@
+.line-sidebar {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.line-sidebar--markers {
+  padding-left: calc(var(--marker-length) + var(--marker-gap));
+}
+
+.line-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--item-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line-sidebar__item {
+  position: relative;
+}
+
+.line-sidebar__label {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--text-color));
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--font-size);
+  line-height: 1.2;
+  text-align: left;
+  transform: translateX(calc(var(--effect, 0) * var(--max-shift)));
+  transition: color var(--smoothing) linear, transform var(--smoothing) linear;
+}
+
+.line-sidebar__label:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 5px;
+}
+
+.line-sidebar__index {
+  margin-right: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  opacity: calc(0.55 + var(--effect, 0) * 0.45);
+}
+
+.line-sidebar__marker {
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--marker-length) - var(--marker-gap));
+  width: var(--marker-length);
+  height: 1px;
+  background: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--marker-color));
+  transform: translateY(-50%) scaleX(calc(0.7 + var(--effect, 0) * 0.3));
+  transform-origin: left center;
+  transition: background-color var(--smoothing) linear, transform var(--smoothing) linear;
+}
+
+.line-sidebar--markers .line-sidebar__item:not(:last-child)::after {
+  position: absolute;
+  top: calc(100% + var(--item-gap) / 2);
+  left: calc(-1 * var(--marker-length) - var(--marker-gap));
+  width: calc(var(--marker-length) * var(--tick-scale));
+  height: 1px;
+  background: var(--marker-color);
+  content: '';
+  opacity: 0.5;
+  transform: translateY(-50%);
+}
+
+.line-sidebar--scale-tick .line-sidebar__item:not(:last-child)::after {
+  transform: translateY(-50%) scaleX(calc(0.75 + var(--effect, 0) * 0.25));
+  transform-origin: left center;
+  transition: transform var(--smoothing) linear;
+}

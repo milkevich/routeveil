@@ -1,0 +1,125 @@
+@font-face {
+  font-family: "Geist Pixel Square";
+  src: url("../../assets/fonts/GeistPixel-Square.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Geist Pixel Grid";
+  src: url("../../assets/fonts/GeistPixel-Grid.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Geist Pixel Circle";
+  src: url("../../assets/fonts/GeistPixel-Circle.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Geist Pixel Triangle";
+  src: url("../../assets/fonts/GeistPixel-Triangle.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Geist Pixel Line";
+  src: url("../../assets/fonts/GeistPixel-Line.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+:root {
+  --font-geist-pixel-square: "Geist Pixel Square", "Geist Mono", ui-monospace, monospace;
+  --font-geist-pixel-grid: "Geist Pixel Grid", "Geist Mono", ui-monospace, monospace;
+  --font-geist-pixel-circle: "Geist Pixel Circle", "Geist Mono", ui-monospace, monospace;
+  --font-geist-pixel-triangle: "Geist Pixel Triangle", "Geist Mono", ui-monospace, monospace;
+  --font-geist-pixel-line: "Geist Pixel Line", "Geist Mono", ui-monospace, monospace;
+}
+
+.font-pixel-square,
+.font-pixel-grid,
+.font-pixel-circle,
+.font-pixel-triangle,
+.font-pixel-line {
+  font-style: normal;
+  font-weight: 500;
+}
+
+.font-pixel-square {
+  font-family: var(--font-geist-pixel-square);
+}
+
+.font-pixel-grid {
+  font-family: var(--font-geist-pixel-grid);
+}
+
+.font-pixel-circle {
+  font-family: var(--font-geist-pixel-circle);
+}
+
+.font-pixel-triangle {
+  font-family: var(--font-geist-pixel-triangle);
+}
+
+.font-pixel-line {
+  font-family: var(--font-geist-pixel-line);
+}
+
+.pixel-heading {
+  display: inline-flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pixel-heading__text {
+  cursor: default;
+  user-select: none;
+  white-space: pre-wrap;
+}
+
+.pixel-heading__text:focus-visible {
+  border-radius: 0.125em;
+  outline: 2px solid currentColor;
+  outline-offset: 0.15em;
+}
+
+.pixel-heading__label {
+  color: var(--muted, #6e6e70);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  opacity: 0;
+  text-transform: uppercase;
+  transition: opacity 180ms ease;
+}
+
+.pixel-heading__label[data-visible="true"] {
+  opacity: 1;
+}
+
+.pixel-heading__font-sans {
+  font-family: Inter, ui-sans-serif, sans-serif;
+  font-weight: inherit;
+}
+
+.pixel-heading__font-mono {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-weight: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-heading__label {
+    transition: none;
+  }
+}

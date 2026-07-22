@@ -1,0 +1,82 @@
+{
+  "name": "routeveil",
+  "version": "0.1.0",
+  "description": "Per-navigation page and overlay transitions for React Router.",
+  "keywords": [
+    "react",
+    "react-router",
+    "page-transitions",
+    "route-transitions",
+    "animation"
+  ],
+  "author": {
+    "name": "Gleb",
+    "url": "https://github.com/milkevich"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist/react-router.js",
+    "dist/types",
+    "README.md"
+  ],
+  "exports": {
+    "./react-router": {
+      "types": "./dist/types/react-router/index.d.ts",
+      "import": "./dist/react-router.js",
+      "default": "./dist/react-router.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite",
+    "check:comments": "node scripts/check-comments.mjs",
+    "check:package": "node scripts/check-comments.mjs --include-dist && node scripts/check-package.mjs",
+    "typecheck": "tsc -b",
+    "build:lib": "vite build --config vite.lib.config.ts && node scripts/strip-comments.mjs dist/react-router.js && tsc -p tsconfig.lib.json",
+    "build:demo": "vite build && node scripts/strip-comments.mjs dist/demo",
+    "build": "npm run typecheck && npm run build:lib && npm run build:demo",
+    "lint": "eslint .",
+    "lint:package": "publint --pack false --strict",
+    "test": "vitest run",
+    "test:consumer": "npm run build:lib && tsc -p tests/consumer/tsconfig.json && npm run check:package && npm run lint:package",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "check": "npm run check:comments && npm run lint && npm run typecheck && npm test && npm run test:consumer",
+    "prepack": "npm run check"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@shikijs/langs": "^4.3.1",
+    "@shikijs/themes": "^4.3.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "jsdom": "^29.1.1",
+    "lucide-react": "^1.25.0",
+    "publint": "^0.3.21",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
+    "shiki": "^4.3.1",
+    "terser": "^5.49.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.62.0",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
+  }
+}

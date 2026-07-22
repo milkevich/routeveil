@@ -1,0 +1,222 @@
+.site-header {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  transition: background-color 60ms ease;
+}
+
+.header-menu-opened {
+  background-color: var(--background);
+}
+
+.site-header__inner {
+  position: relative;
+  display: flex;
+  width: var(--page-width);
+  min-height: var(--header-height);
+  align-items: center;
+  justify-content: space-between;
+  margin-inline: auto;
+  pointer-events: auto;
+}
+
+.site-header__identity {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.site-header-right-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.site-header__github {
+  width: 36px;
+  padding: 0;
+}
+
+.site-header__github img {
+  height: 21px;
+}
+
+.site-header__lab-button {
+  padding-inline: 14px;
+}
+
+@media (max-width: 760px) {
+  .site-header-right-buttons {
+    display: none;
+  }
+}
+
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.site-brand img {
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+}
+
+.primary-nav {
+  display: flex;
+  align-items: stretch;
+}
+
+.primary-nav__link {
+  position: relative;
+  display: grid;
+  min-height: var(--header-height);
+  place-items: center;
+  padding-inline: 0.65rem;
+  color: #777777;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: color 150ms ease;
+}
+
+.primary-nav__link:hover,
+.primary-nav__link[aria-current="page"] {
+  color: #000;
+}
+
+.primary-nav__indicator {
+  position: absolute;
+  bottom: 17.5px;
+  left: 0;
+  height: 2px;
+  background: #000;
+  opacity: 0;
+  transform-origin: left center;
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1), transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.primary-nav__indicator[data-ready="true"] {
+  opacity: 1;
+}
+
+.menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  background: none;
+  border: none;
+}
+
+.menu-toggle__button {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.menu-toggle__line {
+  position: absolute;
+  display: block;
+  width: 15px;
+  height: 2.5px;
+  background: currentColor;
+  transform-origin: center;
+  transition:
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.menu-toggle__line:first-child {
+  transform: translateY(-3px);
+}
+
+.menu-toggle__line:last-child {
+  transform: translateY(3px);
+}
+
+.menu-toggle__button[aria-expanded="true"]
+  .menu-toggle__line:first-child {
+  transform: translateY(0) rotate(45deg);
+}
+
+.menu-toggle__button[aria-expanded="true"]
+  .menu-toggle__line:last-child {
+  transform: translateY(0) rotate(-45deg);
+}
+
+.mobile-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .site-header__inner {
+    width: calc(100% - 28px);
+  }
+
+  .primary-nav,
+  .site-header__cta {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: flex;
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+
+  .mobile-nav {
+    display: grid;
+    width: 100%;
+    max-height: 0;
+    margin-inline: auto;
+    overflow: hidden;
+    border: none;
+    background: #fff;
+    opacity: 0;
+    pointer-events: auto;
+    transition: max-height 240ms ease, opacity 160ms ease, border-width 0ms 240ms;
+  }
+
+  .mobile-nav[data-open="true"] {
+    max-height: 360px;
+    opacity: 1;
+    transition: max-height 240ms ease, opacity 160ms ease;
+  }
+
+  .mobile-nav>a:not(.button) {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid #e6e6e6;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .mobile-nav>a:not(.button) span {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+
+  .mobile-nav .button {
+    margin: 0.75rem;
+  }
+}

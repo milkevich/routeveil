@@ -1,0 +1,53 @@
+.site-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.edge-blur {
+  z-index: 30 !important;
+  pointer-events: none !important;
+}
+
+.site-footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  width: var(--page-width);
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin: 0 auto;
+  font-size: 0.9rem;
+  height: var(--footer-height);
+}
+
+.site-footer span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-footer p {
+  color: var(--muted);
+}
+
+.site-footer a {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .site-footer {
+    align-items: center;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
+  }
+
+  .site-footer span {
+    display: none;
+  }
+}
