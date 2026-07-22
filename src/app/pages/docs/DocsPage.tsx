@@ -6,6 +6,7 @@ import {
 } from 'react'
 import { useLocation } from 'react-router-dom'
 import LineSidebar from '../../shared/components/line-sidebar/LineSidebar'
+import { resolveDocumentTitle } from '../../shared/lib/documentTitle'
 import { Footer } from '../../shared/UI/Footer'
 import { PixelHeadingWord } from '../../shared/UI'
 import { ApiDocs } from './content/ApiDocs'
@@ -37,6 +38,8 @@ export function DocsPage() {
       '',
       `#${section.id}`,
     )
+
+    document.title = resolveDocumentTitle('/docs', `#${section.id}`)
   }, [])
 
   const handleMobileSectionClick = useCallback(

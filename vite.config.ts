@@ -7,5 +7,11 @@ export default defineConfig({
     outDir: 'dist/demo',
     emptyOutDir: false,
     chunkSizeWarningLimit: 600,
+    minify: 'terser',
+    terserOptions: {
+      format: {
+        comments: false,
+      },
+    },
   },
 })

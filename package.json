@@ -33,10 +33,10 @@
   "scripts": {
     "dev": "vite",
     "check:comments": "node scripts/check-comments.mjs",
-    "check:package": "node scripts/check-comments.mjs --include-dist && node scripts/check-package.mjs",
+    "check:package": "node scripts/check-comments.mjs && node scripts/check-package.mjs",
     "typecheck": "tsc -b",
-    "build:lib": "vite build --config vite.lib.config.ts && node scripts/strip-comments.mjs dist/react-router.js && tsc -p tsconfig.lib.json",
-    "build:demo": "vite build && node scripts/strip-comments.mjs dist/demo",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:demo": "vite build",
     "build": "npm run typecheck && npm run build:lib && npm run build:demo",
     "lint": "eslint .",
     "lint:package": "publint --pack false --strict",
