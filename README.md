@@ -1,27 +1,21 @@
 <div align="center">
+  <a href="https://www.routeveil.dev">
   <img width="220" alt="favicon" src="https://github.com/user-attachments/assets/83315c80-4b6e-4328-a048-3afccb4adf77" />
-
-  <h1>Routeveil</h1>
+  </a>
+  <h1>Routeveil 
+  <a href="https://www.npmjs.com/package/routeveil">
+      <img src="https://img.shields.io/npm/v/routeveil?style=flat-square&label=npm" alt="npm version" />
+    </a>
+  </h1>
+  
+  <a href="https://www.routeveil.dev">
+    VIEW DEMO
+  </a>
 
   <p>Page and full-screen overlay transitions for React Router.</p>
 
   <p>
     Per-navigation effects, typed options, custom transitions, and no animation logic inside page components.
-  </p>
-
-  <p>
-    <a href="https://www.npmjs.com/package/routeveil">
-      <img src="https://img.shields.io/npm/v/routeveil?style=flat-square&label=npm" alt="npm version" />
-    </a>
-    <a href="https://www.npmjs.com/package/routeveil">
-      <img src="https://img.shields.io/npm/dm/routeveil?style=flat-square" alt="npm downloads" />
-    </a>
-    <a href="./LICENSE">
-      <img src="https://img.shields.io/npm/l/routeveil?style=flat-square" alt="license" />
-    </a>
-    <a href="https://github.com/milkevich/routeveil">
-      <img src="https://img.shields.io/github/stars/milkevich/routeveil?style=flat-square" alt="GitHub stars" />
-    </a>
   </p>
 </div>
 
