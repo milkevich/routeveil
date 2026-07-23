@@ -16,6 +16,7 @@ import {
   resolveDocumentMetadata,
   siteOrigin,
   socialImageUrl,
+  structuredDataElementId,
 } from '../src/app/shared/lib/documentMetadata'
 
 const indexRobots =
@@ -39,7 +40,7 @@ function expectAppliedMetadata(pathname: string, hash = '') {
   expect(document.title).toBe(metadata.title)
   expect(metaContent('meta[name="description"]')).toBe(metadata.description)
   expect(metaContent('meta[name="robots"]')).toBe(metadata.robots)
-  expect(metaContent('meta[property="og:type"]')).toBe('website')
+  expect(metaContent('meta[property="og:type"]')).toBe(metadata.openGraphType)
   expect(metaContent('meta[property="og:site_name"]')).toBe('Routeveil')
   expect(metaContent('meta[property="og:title"]')).toBe(metadata.title)
   expect(metaContent('meta[property="og:description"]')).toBe(
@@ -49,6 +50,7 @@ function expectAppliedMetadata(pathname: string, hash = '') {
     metadata.canonicalUrl,
   )
   expect(metaContent('meta[property="og:image"]')).toBe(socialImageUrl)
+  expect(metaContent('meta[property="og:image:secure_url"]')).toBe(socialImageUrl)
   expect(metaContent('meta[property="og:image:type"]')).toBe('image/png')
   expect(metaContent('meta[property="og:image:width"]')).toBe('1200')
   expect(metaContent('meta[property="og:image:height"]')).toBe('630')
@@ -105,6 +107,11 @@ function NavigationHarness() {
   )
 }
 
+function structuredData() {
+  const content = document.getElementById(structuredDataElementId)?.textContent
+  return content ? JSON.parse(content) : null
+}
+
 describe('DocumentMetadata', () => {
   beforeEach(() => {
     document.head.innerHTML = ''
@@ -131,7 +138,7 @@ describe('DocumentMetadata', () => {
     (section) => {
       const metadata = resolveDocumentMetadata('/docs', `#${section.id}`)
 
-      expect(metadata.title).toBe(`Routeveil - ${section.label}`)
+      expect(metadata.title).toBe(`Routeveil Documentation - ${section.label}`)
       expect(metadata.description).toBeTruthy()
       expect(metadata.canonicalUrl).toBe(`${siteOrigin}/docs`)
       expect(metadata.robots).toBe(indexRobots)
@@ -140,13 +147,13 @@ describe('DocumentMetadata', () => {
 
   it('handles encoded, unknown, and malformed documentation hashes', () => {
     expect(resolveDocumentMetadata('/docs', '#quick%2Dstart').title).toBe(
-      'Routeveil - Quick Start',
+      'Routeveil Documentation - Quick Start',
     )
     expect(resolveDocumentMetadata('/docs', '#unknown').title).toBe(
-      'Routeveil - Documentation',
+      'Routeveil Documentation - React Router Transitions',
     )
     expect(resolveDocumentMetadata('/docs', '#%E0%A4%A').title).toBe(
-      'Routeveil - Documentation',
+      'Routeveil Documentation - React Router Transitions',
     )
   })
 
@@ -202,5 +209,34 @@ describe('DocumentMetadata', () => {
     renderMetadata('/')
 
     expectAppliedMetadata('/')
+  })
+
+  it('keeps route structured data synchronized during client navigation', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <NavigationHarness />
+      </MemoryRouter>,
+    )
+
+    expect(JSON.stringify(structuredData())).toContain(`${siteOrigin}/#webpage`)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Installation' }))
+    expect(JSON.stringify(structuredData())).toContain(`${siteOrigin}/docs#webpage`)
+    expect(JSON.stringify(structuredData())).toContain('TechArticle')
+
+    act(() => {
+      window.history.replaceState(null, '', '/docs#quick-start')
+      window.dispatchEvent(new Event(documentLocationChangeEvent))
+    })
+    expect(JSON.stringify(structuredData())).toContain(
+      'Routeveil Documentation - Quick Start',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lab' }))
+    expect(JSON.stringify(structuredData())).toContain(`${siteOrigin}/lab#webpage`)
+    expect(JSON.stringify(structuredData())).toContain('WebApplication')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Missing' }))
+    expect(structuredData()).toBeNull()
   })
 })

@@ -1,0 +1,30 @@
+# Routeveil
+
+> Routeveil is an open-source React and TypeScript transition engine for React Router. It provides typed, per-navigation page animations and full-screen overlay transitions while keeping transition logic out of route components.
+
+## Official resources
+
+- [Website](https://www.routeveil.dev/): Project overview.
+- [Documentation](https://www.routeveil.dev/docs): Installation, quick start, API, transitions, options, and reduced-motion behavior.
+- [Interactive laboratory](https://www.routeveil.dev/lab): Built-in page and overlay transition demonstrations.
+- [GitHub repository](https://github.com/milkevich/routeveil): Source code, issues, and README.
+- [npm package](https://www.npmjs.com/package/routeveil): Published package metadata and versions.
+- [Complete AI-readable reference](https://www.routeveil.dev/llms-full.txt): Expanded product and API summary.
+
+## Package usage
+
+- Install package: `npm install routeveil`
+- Public import entry: `routeveil/react-router`
+- Peer dependencies: React 19, React DOM 19, and React Router DOM 7.
+- Package format: ES module with included TypeScript declarations.
+- License: MIT.
+
+## Core API
+
+- `RouteveilProvider`: Coordinates transitions and navigation commits.
+- `RouteveilView`: Marks the routed region used by page transitions.
+- `RouteveilLink`: Adds an optional typed transition to React Router links.
+- `useRouteveilNavigate`: Performs transition-aware programmatic navigation.
+- `useRouteveilTransition`: Plays a transition without changing the route.
+
+The website, documentation, GitHub repository, and npm page above are the canonical public sources for Routeveil.

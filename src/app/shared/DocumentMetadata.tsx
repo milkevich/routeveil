@@ -3,7 +3,9 @@ import { useLocation } from 'react-router-dom'
 import {
   documentLocationChangeEvent,
   resolveDocumentMetadata,
+  resolveStructuredData,
   socialImageUrl,
+  structuredDataElementId,
   type RouteMetadata,
 } from './lib/documentMetadata'
 
@@ -60,22 +62,54 @@ function applyDocumentMetadata(metadata: RouteMetadata) {
   updateCanonical(metadata.canonicalUrl)
   upsertMeta('name', 'description', metadata.description)
   upsertMeta('name', 'robots', metadata.robots)
-  upsertMeta('property', 'og:type', 'website')
+  upsertMeta('property', 'og:type', metadata.openGraphType)
   upsertMeta('property', 'og:locale', 'en_US')
   upsertMeta('property', 'og:site_name', 'Routeveil')
   upsertMeta('property', 'og:title', metadata.title)
   upsertMeta('property', 'og:description', metadata.description)
   upsertMeta('property', 'og:url', metadata.canonicalUrl)
   upsertMeta('property', 'og:image', socialImageUrl)
+  upsertMeta('property', 'og:image:secure_url', socialImageUrl)
   upsertMeta('property', 'og:image:type', 'image/png')
   upsertMeta('property', 'og:image:width', '1200')
   upsertMeta('property', 'og:image:height', '630')
-  upsertMeta('property', 'og:image:alt', 'Routeveil, cinematic React Router transitions')
+  upsertMeta(
+    'property',
+    'og:image:alt',
+    'Routeveil, React Router page and overlay transitions',
+  )
   upsertMeta('name', 'twitter:card', 'summary_large_image')
   upsertMeta('name', 'twitter:title', metadata.title)
   upsertMeta('name', 'twitter:description', metadata.description)
   upsertMeta('name', 'twitter:image', socialImageUrl)
-  upsertMeta('name', 'twitter:image:alt', 'Routeveil, cinematic React Router transitions')
+  upsertMeta(
+    'name',
+    'twitter:image:alt',
+    'Routeveil, React Router page and overlay transitions',
+  )
+}
+
+function updateStructuredData(structuredData: Record<string, unknown> | null) {
+  const existing = document.getElementById(structuredDataElementId)
+
+  if (!structuredData) {
+    existing?.remove()
+    return
+  }
+
+  const element = existing ?? document.createElement('script')
+  element.id = structuredDataElementId
+  element.setAttribute('type', 'application/ld+json')
+  element.textContent = JSON.stringify(structuredData).replace(/</gu, '\\u003c')
+
+  if (!element.isConnected) {
+    document.head.append(element)
+  }
+}
+
+function applyLocationMetadata(pathname: string, hash: string) {
+  applyDocumentMetadata(resolveDocumentMetadata(pathname, hash))
+  updateStructuredData(resolveStructuredData(pathname, hash))
 }
 
 export function DocumentMetadata() {
@@ -83,17 +117,13 @@ export function DocumentMetadata() {
 
   useEffect(() => {
     const updateFromWindow = () => {
-      applyDocumentMetadata(
-        resolveDocumentMetadata(
-          window.location.pathname,
-          window.location.hash,
-        ),
+      applyLocationMetadata(
+        window.location.pathname,
+        window.location.hash,
       )
     }
 
-    applyDocumentMetadata(
-      resolveDocumentMetadata(location.pathname, location.hash),
-    )
+    applyLocationMetadata(location.pathname, location.hash)
     window.addEventListener('hashchange', updateFromWindow)
     window.addEventListener('popstate', updateFromWindow)
     window.addEventListener(documentLocationChangeEvent, updateFromWindow)

@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist/demo',
-    emptyOutDir: false,
+    emptyOutDir: true,
     chunkSizeWarningLimit: 600,
     minify: 'terser',
     terserOptions: {

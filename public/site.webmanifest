@@ -1,0 +1,18 @@
+{
+  "name": "Routeveil",
+  "short_name": "Routeveil",
+  "description": "React and TypeScript transition engine for React Router.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

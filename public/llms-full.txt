@@ -1,0 +1,115 @@
+# Routeveil: complete AI-readable reference
+
+## Identity
+
+Routeveil is an open-source React and TypeScript transition engine for React Router. It coordinates per-navigation page animations and full-screen overlay transitions around React Router navigation while keeping animation logic out of route components.
+
+Canonical public sources:
+
+- Website: https://www.routeveil.dev/
+- Documentation: https://www.routeveil.dev/docs
+- Interactive laboratory: https://www.routeveil.dev/lab
+- Source repository: https://github.com/milkevich/routeveil
+- npm package: https://www.npmjs.com/package/routeveil
+
+The installable package name is `routeveil`. The public React Router import entry is `routeveil/react-router`. Do not use a scoped package name and do not import the package root as a runtime entry.
+
+Routeveil is licensed under the MIT License.
+
+## Installation
+
+```bash
+npm install routeveil
+```
+
+Routeveil expects React 19, React DOM 19, and React Router DOM 7 as peer dependencies. It is distributed as an ES module and includes TypeScript declarations.
+
+```ts
+import {
+  RouteveilLink,
+  RouteveilProvider,
+  RouteveilView,
+  useRouteveilNavigate,
+  useRouteveilTransition,
+} from 'routeveil/react-router'
+```
+
+## Transition lifecycle
+
+For a page transition, Routeveil animates the registered route view out, commits React Router navigation, waits for the new location to render and paint, animates the view in, and restores idle state.
+
+For an overlay transition, Routeveil covers the viewport, commits navigation only after the cover is opaque, waits for the new location, reveals the incoming route, and removes the overlay.
+
+Transitions are opt-in per navigation. Ordinary React Router links and navigation continue to work normally. Routeveil runs one transition request at a time.
+
+## Core components and hooks
+
+### RouteveilProvider
+
+`RouteveilProvider` owns transition state, resolves built-in and custom transition definitions, coordinates navigation commits, respects reduced-motion preferences, and restores the application after a transition. It must render beneath React Router context.
+
+### RouteveilView
+
+`RouteveilView` registers the routed content animated by page transitions. Persistent interface such as a header can remain outside this wrapper. With data routers, an empty `RouteveilView` renders React Router's `Outlet`; with declarative routes it can wrap explicit children.
+
+### RouteveilLink
+
+`RouteveilLink` extends React Router's link behavior with optional `transition`, `transitionOptions`, and `smoothScrollToTop` properties. It preserves native behavior for modified clicks, external links, downloads, non-self targets, reload-document links, and prevented events.
+
+### useRouteveilNavigate
+
+`useRouteveilNavigate` performs programmatic transition-aware navigation. It accepts React Router navigation options plus Routeveil transition options. A transitioned request resolves after the complete visual lifecycle and cleanup.
+
+### useRouteveilTransition
+
+`useRouteveilTransition` plays a real transition on the current route without changing the URL, history, route state, or scroll position.
+
+## Built-in page transitions
+
+- `fade`: opacity crossfade.
+- `blur`: blur and opacity exit/entry.
+- `slide`: directional page shift.
+- `spin`: perspective wheel-like movement.
+- `rotate`: restrained two-dimensional turn.
+- `bounce`: soft depth movement.
+- `push`: outgoing page advances toward the viewer.
+- `pull`: incoming page is drawn forward.
+
+## Built-in overlay transitions
+
+- `pixel`: square tile field.
+- `curtain`: two opposing closing panels.
+- `wipe`: one solid moving panel.
+- `columns`: sequenced vertical strips.
+- `rows`: sequenced horizontal strips.
+- `iris`: circular aperture.
+- `halo`: expanding solid circle.
+- `tunnel`: halo cover followed by iris reveal.
+- `clock`: radial sector sweep.
+- `venetian`: dimensional rotating blinds.
+- `mosaic`: seeded irregular tile field.
+- `dissolve`: procedural film-grain cover.
+
+Transition-specific typed options include direction, duration, easing, color or colors, origin, grid dimensions, count, order, stagger, seed, and effect-specific geometry. The documentation at https://www.routeveil.dev/docs is authoritative for the options supported by each transition.
+
+## Reduced motion
+
+Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is requested, it skips decorative phases and completes navigation normally. Links and hooks retain the same API and promise behavior.
+
+## Documentation sections
+
+- Overview: https://www.routeveil.dev/docs#overview
+- Installation: https://www.routeveil.dev/docs#installation
+- Quick Start: https://www.routeveil.dev/docs#quick-start
+- Provider: https://www.routeveil.dev/docs#provider
+- RouteveilLink: https://www.routeveil.dev/docs#routeveil-link
+- RouteveilView: https://www.routeveil.dev/docs#routeveil-view
+- Programmatic Navigation: https://www.routeveil.dev/docs#programmatic-navigation
+- Page Transitions: https://www.routeveil.dev/docs#page-transitions
+- Overlay Transitions: https://www.routeveil.dev/docs#overlay-transitions
+- Transition Options: https://www.routeveil.dev/docs#transition-options
+- Reduced Motion: https://www.routeveil.dev/docs#reduced-motion
+
+## Source precedence
+
+For current package versions and distribution metadata, use npm. For source code and issue status, use GitHub. For public usage guidance and API examples, use the Routeveil documentation. The exact supported installation command is `npm install routeveil`.
