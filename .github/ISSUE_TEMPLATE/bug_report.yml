@@ -1,0 +1,41 @@
+name: Bug report
+description: Report reproducible Routeveil behavior that is incorrect or unsafe.
+title: "bug: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Provide a minimal reproduction whenever possible.
+  - type: input
+    id: version
+    attributes:
+      label: Routeveil version
+      placeholder: 0.1.1
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include a repository, sandbox, or minimal source example with exact steps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include browser, operating system, React, React DOM, and React Router versions.
+    validations:
+      required: true
