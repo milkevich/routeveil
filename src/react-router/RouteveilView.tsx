@@ -32,8 +32,9 @@ export const RouteveilView = forwardRef<HTMLDivElement, RouteveilViewProps>(
 
     const mergedRef = useCallback(
       (node: HTMLDivElement | null) => {
+        const previousNode = nodeRef.current
         nodeRef.current = node
-        registerView(node)
+        registerView(node, previousNode)
         setForwardedRef(forwardedRef, node)
       },
       [forwardedRef, registerView],

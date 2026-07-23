@@ -16,6 +16,7 @@ export function useRouteveilTransition(): RouteveilPlay {
       options: RouteveilPlayOptions = {},
     ) => transitionTo({
       to: `${location.pathname}${location.search}${location.hash}`,
+      expectedPath: `${location.pathname}${location.search}${location.hash}`,
       transition,
       transitionOptions: options.transitionOptions,
       clickPosition: options.clickPosition,

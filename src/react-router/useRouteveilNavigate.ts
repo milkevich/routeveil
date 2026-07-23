@@ -49,6 +49,7 @@ export function useRouteveilNavigate(): RouteveilNavigate {
 
       return transitionTo({
         to,
+        expectedPath: `${resolved.pathname}${resolved.search}${resolved.hash}`,
         transition,
         commit: () => {
           return navigate(to, routeveilNavigateOptions)

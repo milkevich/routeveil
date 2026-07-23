@@ -9,6 +9,7 @@ import type { RouteveilPhase, TransitionName } from './types.js'
 
 export type TransitionRequest = {
   to: To
+  expectedPath: string
   transition: TransitionName
   commit: () => void | Promise<void>
   transitionOptions?: unknown
@@ -29,7 +30,10 @@ export type RouteveilContextValue = {
   phase: RouteveilPhase
   activeOverlay: ActiveOverlay | null
   transitionTo: (request: TransitionRequest) => Promise<void>
-  registerView: (element: HTMLElement | null) => void
+  registerView: (
+    element: HTMLElement | null,
+    previousElement: HTMLElement | null,
+  ) => void
   registerOverlayHandle: (
     id: number,
     handle: OverlayAnimationHandle | null,

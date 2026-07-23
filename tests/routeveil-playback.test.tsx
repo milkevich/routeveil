@@ -439,11 +439,7 @@ describe('normal navigation after adding playback', () => {
 
     expect(browser.animations).toHaveLength(2)
     expect(view).toHaveAttribute('data-routeveil-phase', 'entering')
-    expect(browser.scrollTo).toHaveBeenCalledWith({
-      behavior: 'instant',
-      left: 0,
-      top: 0,
-    })
+    expect(browser.scrollTo).not.toHaveBeenCalled()
 
     await finish(browser.animations[1])
 

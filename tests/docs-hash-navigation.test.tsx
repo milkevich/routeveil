@@ -49,21 +49,24 @@ describe('documentation hash navigation', () => {
     }
   })
 
-  it('positions the requested section during layout without deferred frames', () => {
-    render(
-      <MemoryRouter initialEntries={['/docs#installation']}>
-        <RouteveilProvider>
-          <DocsPage />
-        </RouteveilProvider>
-      </MemoryRouter>,
-    )
+  it.each(['installation', 'compatibility', 'interrupted-navigation'])(
+    'positions the %s section during layout without deferred frames',
+    (section) => {
+      render(
+        <MemoryRouter initialEntries={[`/docs#${section}`]}>
+          <RouteveilProvider>
+            <DocsPage />
+          </RouteveilProvider>
+        </MemoryRouter>,
+      )
 
-    expect(scrollIntoView).toHaveBeenCalledOnce()
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' })
-    expect(scrollIntoView.mock.instances[0]).toHaveAttribute(
-      'id',
-      'installation',
-    )
-    expect(browserMocks.pendingFrames).toBe(1)
-  })
+      expect(scrollIntoView).toHaveBeenCalledOnce()
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' })
+      expect(scrollIntoView.mock.instances[0]).toHaveAttribute(
+        'id',
+        section,
+      )
+      expect(browserMocks.pendingFrames).toBe(1)
+    },
+  )
 })

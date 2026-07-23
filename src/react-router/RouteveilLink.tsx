@@ -135,6 +135,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
 
     void transitionTo({
       to: destination.to,
+      expectedPath: `${resolvedPath.pathname}${resolvedPath.search}${resolvedPath.hash}`,
       transition,
       commit: () => {
         return navigate(destination.to, {
