@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -108,27 +109,14 @@ export function DocsPage() {
     }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!location.hash) return
 
     const id = decodeURIComponent(location.hash.slice(1))
-    let secondFrame = 0
 
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        document
-          .getElementById(id)
-          ?.scrollIntoView({ behavior: 'instant' })
-      })
-    })
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame)
-
-      if (secondFrame) {
-        window.cancelAnimationFrame(secondFrame)
-      }
-    }
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: 'instant' })
   }, [location.hash])
 
   useEffect(() => {
