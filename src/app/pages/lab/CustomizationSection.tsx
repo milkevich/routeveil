@@ -53,8 +53,8 @@ export function CustomizationSection() {
             className="transition-card customization-card"
             key={item.to}
             to={item.to}
-            transition="slide"
-            transitionOptions={{ direction: 'left' }}
+            transition="wipe"
+            transitionOptions={{ direction: 'right' }}
           >
             <span className="transition-card__index">
               {item.index}
