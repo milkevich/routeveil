@@ -1,0 +1,107 @@
+{
+  "packageName": "routeveil",
+  "importPath": "routeveil/react-router",
+  "supported": {
+    "react": "^18.0.0 || ^19.0.0",
+    "reactDom": "^18.0.0 || ^19.0.0",
+    "reactRouterDom": "^6.27.0 || ^7.0.0"
+  },
+  "fixtures": [
+    {
+      "id": "react-18-router-6-minimum",
+      "react": "18.0.0",
+      "reactDom": "18.0.0",
+      "reactRouterDom": "6.27.0",
+      "reactTypes": "18.2.6",
+      "reactDomTypes": "18.2.4",
+      "schedulerTypes": "0.16.8",
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-18-router-6-latest",
+      "react": "18.3.1",
+      "reactDom": "18.3.1",
+      "reactRouterDom": "6.30.4",
+      "reactTypes": "18.3.31",
+      "reactDomTypes": "18.3.7",
+      "schedulerTypes": "0.16.8",
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-19-router-6-minimum",
+      "react": "19.0.0",
+      "reactDom": "19.0.0",
+      "reactRouterDom": "6.27.0",
+      "reactTypes": "19.0.0",
+      "reactDomTypes": "19.0.0",
+      "schedulerTypes": null,
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-19-router-6-latest",
+      "react": "19.2.8",
+      "reactDom": "19.2.8",
+      "reactRouterDom": "6.30.4",
+      "reactTypes": "19.2.17",
+      "reactDomTypes": "19.2.3",
+      "schedulerTypes": null,
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-18-router-7-minimum",
+      "react": "18.0.0",
+      "reactDom": "18.0.0",
+      "reactRouterDom": "7.0.0",
+      "reactTypes": "18.2.6",
+      "reactDomTypes": "18.2.4",
+      "schedulerTypes": "0.16.8",
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-18-router-7-latest",
+      "react": "18.3.1",
+      "reactDom": "18.3.1",
+      "reactRouterDom": "7.18.1",
+      "reactTypes": "18.3.31",
+      "reactDomTypes": "18.3.7",
+      "schedulerTypes": "0.16.8",
+      "latestRouterOptions": true
+    },
+    {
+      "id": "react-19-router-7-minimum",
+      "react": "19.0.0",
+      "reactDom": "19.0.0",
+      "reactRouterDom": "7.0.0",
+      "reactTypes": "19.0.0",
+      "reactDomTypes": "19.0.0",
+      "schedulerTypes": null,
+      "latestRouterOptions": false
+    },
+    {
+      "id": "react-19-router-7-latest",
+      "react": "19.2.8",
+      "reactDom": "19.2.8",
+      "reactRouterDom": "7.18.1",
+      "reactTypes": "19.2.17",
+      "reactDomTypes": "19.2.3",
+      "schedulerTypes": null,
+      "latestRouterOptions": true
+    },
+    {
+      "id": "react-19-router-7-repository",
+      "react": "19.2.7",
+      "reactDom": "19.2.7",
+      "reactRouterDom": "7.18.1",
+      "reactTypes": "19.2.17",
+      "reactDomTypes": "19.2.3",
+      "schedulerTypes": null,
+      "latestRouterOptions": true
+    }
+  ],
+  "unsupported": [
+    "React Router 5",
+    "React Router 8",
+    "React Router DOM versions below 6.27.0",
+    "untested combinations"
+  ]
+}

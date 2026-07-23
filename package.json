@@ -52,6 +52,7 @@
     "lint": "eslint .",
     "lint:package": "publint --pack false --strict",
     "test": "vitest run",
+    "test:compat": "npm run build:lib && node scripts/run-compatibility.mjs",
     "test:consumer": "npm run build:lib && tsc -p tests/consumer/tsconfig.json && npm run check:package && npm run lint:package",
     "test:watch": "vitest",
     "preview": "vite preview",
@@ -59,9 +60,9 @@
     "prepack": "npm run check"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0"
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "react-router-dom": "^6.27.0 || ^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

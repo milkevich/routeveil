@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: npm
+          node-version: 22
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:demo
+      - run: mkdir -p package-artifact
+      - run: npm pack --ignore-scripts --json --pack-destination package-artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: routeveil-package
+          path: package-artifact/*.tgz
+          if-no-files-found: error
+
+  compatibility:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture:
+          - react-18-router-6-minimum
+          - react-18-router-6-latest
+          - react-19-router-6-minimum
+          - react-19-router-6-latest
+          - react-18-router-7-minimum
+          - react-18-router-7-latest
+          - react-19-router-7-minimum
+          - react-19-router-7-latest
+          - react-19-router-7-repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: routeveil-package
+          path: package-artifact
+      - run: node scripts/run-compatibility.mjs ${{ matrix.fixture }}
+        env:
+          ROUTEVEIL_COMPAT_TARBALL: ${{ github.workspace }}/package-artifact

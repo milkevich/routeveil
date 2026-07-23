@@ -1,0 +1,18 @@
+{
+  "name": "routeveil-compatibility-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test:runtime": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "verify:install": "node verify-install.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.2",
+    "vite": "8.1.1",
+    "vitest": "4.1.10"
+  }
+}
