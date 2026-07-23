@@ -14,8 +14,20 @@ const packageImports = `import {
   useRouteveilTransition,
 } from 'routeveil/react-router'`
 
-const quickStart = `import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+const quickStartMain = `import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </StrictMode>,
+)`
+
+const quickStartApp = `import { Route, Routes } from 'react-router-dom'
 import {
   RouteveilLink,
   RouteveilProvider,
@@ -52,7 +64,7 @@ function About() {
   )
 }
 
-function App() {
+export default function App() {
   return (
     <RouteveilProvider>
       <header>Persistent header</header>
@@ -64,13 +76,7 @@ function App() {
       </RouteveilView>
     </RouteveilProvider>
   )
-}
-
-createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>,
-)`
+}`
 
 export function GettingStartedDocs() {
   return (
@@ -157,12 +163,14 @@ export function GettingStartedDocs() {
         intro="Place the provider inside router context, wrap route content in one persistent view, and choose a transition on each RouteveilLink."
         title="Quick Start"
       >
-        <CodeBlock filename="main.tsx" language="tsx">{quickStart}</CodeBlock>
+        <CodeBlock filename="main.tsx" language="tsx">{quickStartMain}</CodeBlock>
+        <CodeBlock filename="App.tsx" language="tsx">{quickStartApp}</CodeBlock>
         <p>
-          <code>RouteveilProvider</code> must render beneath <code>BrowserRouter</code>.
-          <code> RouteveilView</code> wraps the content animated by page transitions,
-          while the header remains mounted outside that view. Each link chooses its
-          own transition and options.
+          <code>main.tsx</code> creates the <code>BrowserRouter</code> context.
+          <code> App.tsx</code> defines the persistent layout and routes, with
+          <code> RouteveilProvider</code> beneath the router. <code>RouteveilView</code>
+          wraps the content animated by page transitions while the header remains
+          mounted outside that view. Each link chooses its own transition and options.
         </p>
         <div className="doc-note">
           <strong>Ordinary links still work</strong>
