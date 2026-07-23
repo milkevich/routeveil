@@ -2,6 +2,7 @@ import {
   docsSections,
   type DocsSectionId,
 } from '../../pages/docs/docsSections'
+import compatibility from '../../data/compatibility.json'
 
 export const siteOrigin = 'https://www.routeveil.dev'
 export const repositoryUrl = 'https://github.com/milkevich/routeveil'
@@ -22,6 +23,8 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Understand how Routeveil coordinates route exits, navigation commits, new-route rendering, and entrance animations in React Router.',
   installation:
     'Install Routeveil with npm install routeveil and configure its React, React DOM, and React Router peer dependencies.',
+  compatibility:
+    'Review the verified React 18 and 19 and React Router DOM 6.27 and 7 compatibility ranges for Routeveil.',
   'quick-start':
     'Add RouteveilProvider, RouteveilView, and RouteveilLink to create animated React Router navigation.',
   provider:
@@ -32,6 +35,8 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Use RouteveilView to define the routed content animated by Routeveil while persistent interface stays mounted.',
   'programmatic-navigation':
     'Navigate with transitions in code using Routeveil hooks, typed options, and scroll controls.',
+  'interrupted-navigation':
+    'Learn how Routeveil handles concurrent requests, browser history interruptions, focus, and deterministic transition cleanup.',
   'page-transitions':
     'Explore Routeveil page transitions including fade, blur, slide, spin, rotate, bounce, push, and pull.',
   'overlay-transitions':
@@ -157,7 +162,7 @@ function createCommonStructuredData(): StructuredDataNode[] {
       applicationSubCategory: 'React Router transition engine',
       operatingSystem: 'Cross-platform',
       browserRequirements: 'A modern browser with the Web Animations API',
-      softwareRequirements: 'React 19, React DOM 19, and React Router DOM 7',
+      softwareRequirements: `React ${compatibility.supported.react}, React DOM ${compatibility.supported.reactDom}, and React Router DOM ${compatibility.supported.reactRouterDom}`,
       downloadUrl: npmPackageUrl,
       installUrl: npmPackageUrl,
       isAccessibleForFree: true,
@@ -169,6 +174,7 @@ function createCommonStructuredData(): StructuredDataNode[] {
         'Typed transition-specific options',
         'Page and full-screen overlay effects',
         'Programmatic navigation and transition playback hooks',
+        'Deterministic interrupted-navigation cleanup and focus handling',
         'Reduced-motion support',
       ],
     },

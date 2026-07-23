@@ -107,6 +107,8 @@ describe('static SEO and crawler assets', () => {
       expect(content).toContain('npm install routeveil')
       expect(content).toContain('routeveil/react-router')
       expect(content).toContain('https://www.routeveil.dev/docs')
+      expect(content).toContain('Interrupted navigation')
+      expect(content).toContain('active promise')
       expect(content).toContain(repositoryUrl)
       expect(content).toContain(npmPackageUrl)
       expect(content).not.toContain('<html')
@@ -130,6 +132,9 @@ describe('static SEO and crawler assets', () => {
     expect(generator).toContain("file: 'docs.html'")
     expect(generator).toContain("file: 'lab.html'")
     expect(generator).toContain("file: '404.html'")
+    expect(generator).toContain("from '../src/app/pages/docs/docsSections'")
+    expect(generator).toContain('id="compatibility"')
+    expect(generator).toContain('id="interrupted-navigation"')
     expect(generator).toContain('root.replaceChildren()')
     expect(packageJson.scripts['build:demo']).toBe(
       'vite build && node --import tsx scripts/generate-seo-pages.ts',

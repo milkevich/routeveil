@@ -7,6 +7,7 @@ import {
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { JSDOM } from 'jsdom'
+import { docsSections } from '../src/app/pages/docs/docsSections'
 import {
   indexRobots,
   resolveDocumentMetadata,
@@ -23,8 +24,27 @@ type PageDefinition = {
 const buildRoot = resolve(process.cwd(), 'dist/demo')
 const templatePath = resolve(buildRoot, 'index.html')
 const template = await readFile(templatePath, 'utf8')
+const compatibility = JSON.parse(
+  await readFile(
+    resolve(process.cwd(), 'src/app/data/compatibility.json'),
+    'utf8',
+  ),
+)
 const fallbackMarker = '__ROUTEVEIL_STATIC_FALLBACK__'
-
+const docsNavigation = docsSections
+  .map((section) => (
+    `<a href="/docs#${section.id}">${section.label}</a>`
+  ))
+  .join('\n')
+const compatibilityRangeRows = [
+  ['React', compatibility.supported.react],
+  ['React DOM', compatibility.supported.reactDom],
+  ['React Router DOM', compatibility.supported.reactRouterDom],
+]
+  .map(([dependency, range]) => (
+    `<tr><td>${dependency}</td><td><code>${range}</code></td></tr>`
+  ))
+  .join('\n')
 const pages: PageDefinition[] = [
   {
     file: 'index.html',
@@ -49,23 +69,28 @@ const pages: PageDefinition[] = [
       <main>
         <h1>Documentation</h1>
         <p>Installation, API lifecycles, transition options, and copyable React Router examples for Routeveil.</p>
-        <section>
+        <section id="installation">
           <h2>Installation</h2>
           <pre><code>npm install routeveil</code></pre>
           <p>Import Routeveil for React Router from <code>routeveil/react-router</code>.</p>
         </section>
+        <section id="compatibility">
+          <h2>Compatibility</h2>
+          <table>
+            <caption>Supported versions</caption>
+            <thead><tr><th>Dependency</th><th>Range</th></tr></thead>
+            <tbody>${compatibilityRangeRows}</tbody>
+          </table>
+          <p>Routeveil is tested in CI across React 18 and 19 with supported React Router DOM 6 and 7 releases.</p>
+          <p>React Router 5 and React Router 8 are not currently supported. <a href="https://github.com/milkevich/routeveil/blob/main/src/app/data/compatibility.json">View the exact test matrix.</a></p>
+        </section>
+        <section id="interrupted-navigation">
+          <h2>Interrupted Navigation</h2>
+          <p>Routeveil runs one transition and one active promise at a time. Additional Routeveil navigation and playback requests reuse that promise without queueing or committing another destination.</p>
+          <p>Browser history and other external location changes cancel current visual work, leave the latest location in control, preserve meaningful application focus or focus the incoming RouteveilView with preventScroll, and clean up animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.</p>
+        </section>
         <nav aria-label="Documentation sections">
-          <a href="/docs#overview">Overview</a>
-          <a href="/docs#installation">Installation</a>
-          <a href="/docs#quick-start">Quick Start</a>
-          <a href="/docs#provider">Provider</a>
-          <a href="/docs#routeveil-link">RouteveilLink</a>
-          <a href="/docs#routeveil-view">RouteveilView</a>
-          <a href="/docs#programmatic-navigation">Programmatic Navigation</a>
-          <a href="/docs#page-transitions">Page Transitions</a>
-          <a href="/docs#overlay-transitions">Overlay Transitions</a>
-          <a href="/docs#transition-options">Transition Options</a>
-          <a href="/docs#reduced-motion">Reduced Motion</a>
+          ${docsNavigation}
         </nav>
       </main>
     `,
@@ -288,6 +313,24 @@ for (const page of pages) {
       fallbackDocument.body.textContent?.includes('npm install routeveil'),
       'documentation fallback has the wrong install command',
     )
+    invariant(
+      Boolean(fallbackDocument.getElementById('interrupted-navigation'))
+        && fallbackDocument.body.textContent?.includes('Interrupted Navigation')
+        && Boolean(fallbackDocument.querySelector(
+          'a[href="/docs#interrupted-navigation"]',
+        )),
+      'documentation fallback is missing interrupted navigation',
+    )
+    invariant(
+      Boolean(fallbackDocument.getElementById('compatibility'))
+        && Boolean(fallbackDocument.querySelector(
+          'a[href="/docs#compatibility"]',
+        ))
+        && fallbackDocument.body.textContent?.includes(
+          compatibility.supported.reactRouterDom,
+        ),
+      'documentation fallback is missing compatibility',
+    )
   }
 
   const serialized = `<!doctype html>\n${document.documentElement.outerHTML}\n`
@@ -325,6 +368,32 @@ invariant(robots.includes('User-agent: OAI-SearchBot'), 'robots is missing AI se
 invariant(robots.includes('Sitemap: https://www.routeveil.dev/sitemap.xml'), 'robots has the wrong sitemap')
 invariant(llms.includes('npm install routeveil'), 'llms.txt has the wrong install command')
 invariant(llmsFull.includes('npm install routeveil'), 'llms-full.txt has the wrong install command')
+for (const range of Object.values<string>(compatibility.supported)) {
+  invariant(
+    llms.includes(range) && llmsFull.includes(range),
+    `AI-readable references are missing compatibility range ${range}`,
+  )
+}
+
+for (const fixture of compatibility.fixtures) {
+  const versions = [
+    `React ${fixture.react}`,
+    `React DOM ${fixture.reactDom}`,
+    `React Router DOM ${fixture.reactRouterDom}`,
+  ]
+
+  invariant(
+    versions.every((version) => (
+      llms.includes(version) && llmsFull.includes(version)
+    )),
+    `AI-readable references are missing compatibility fixture ${fixture.id}`,
+  )
+}
+invariant(
+  llms.includes('Interrupted navigation')
+    && llmsFull.includes('Interrupted navigation'),
+  'AI-readable references are missing interrupted navigation',
+)
 invariant(indexRobots.startsWith('index, follow'), 'indexing directives are invalid')
 
 process.stdout.write('SEO shells verified without changing the React root or client entry.\n')

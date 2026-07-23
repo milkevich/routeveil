@@ -1,4 +1,5 @@
 import { CodeBlock } from '../../../shared/UI'
+import compatibility from '../../../data/compatibility.json'
 import { DocSection } from '../DocSection'
 import { LifecycleDiagram } from '../LifecycleDiagram'
 
@@ -125,8 +126,8 @@ export function GettingStartedDocs() {
           <p>
             Regular React Router links and navigation continue to work normally.
             Transitions are selected per request, and only one Routeveil transition
-            runs at a time. An additional Routeveil request is ignored until the
-            active transition promise settles.
+            runs at a time. An additional Routeveil request reuses the active promise
+            without queuing or committing another destination.
           </p>
         </div>
       </DocSection>
@@ -158,8 +159,56 @@ export function GettingStartedDocs() {
       </DocSection>
 
       <DocSection
-        id="quick-start"
+        id="compatibility"
         index="03"
+        intro="Review the React, React DOM, and React Router DOM versions verified against Routeveil's published package."
+        title="Compatibility"
+      >
+        <p>
+          Routeveil verifies its published package against the following peer
+          dependency ranges. npm peer dependency warnings indicate that the
+          consuming application is outside these supported versions.
+        </p>
+        <div className="prop-table-wrap" tabIndex={0}>
+          <table className="prop-table">
+            <caption>Supported versions</caption>
+            <thead>
+              <tr>
+                <th>Dependency</th>
+                <th>Range</th>
+              </tr>
+            </thead>
+            <tbody className="prop-table-body">
+              <tr>
+                <td>React</td>
+                <td><code>{compatibility.supported.react}</code></td>
+              </tr>
+              <tr>
+                <td>React DOM</td>
+                <td><code>{compatibility.supported.reactDom}</code></td>
+              </tr>
+              <tr>
+                <td>React Router DOM</td>
+                <td><code>{compatibility.supported.reactRouterDom}</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Routeveil is tested in CI across React 18 and 19 with supported React
+          Router DOM 6 and 7 releases.
+          React Router 5 and React Router 8 are not currently supported.{' '}
+          <a style={{
+            textDecoration: "underline"
+          }} href="https://github.com/milkevich/routeveil/blob/main/src/app/data/compatibility.json">
+            View the exact test matrix.
+          </a>
+        </p>
+      </DocSection>
+
+      <DocSection
+        id="quick-start"
+        index="04"
         intro="Place the provider inside router context, wrap route content in one persistent view, and choose a transition on each RouteveilLink."
         title="Quick Start"
       >

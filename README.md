@@ -64,6 +64,16 @@ npm install routeveil
 
 Routeveil expects React, React DOM, and React Router DOM in the consuming application.
 
+### Compatibility
+
+| Dependency | Supported versions |
+|---|---|
+| React | `^18.0.0 || ^19.0.0` |
+| React DOM | `^18.0.0 || ^19.0.0` |
+| React Router DOM | `^6.27.0 || ^7.0.0` |
+
+See the [compatibility documentation](https://www.routeveil.dev/docs#compatibility) for the exact tested matrix and unsupported versions.
+
 The public API is exposed from:
 
 ```ts
@@ -238,6 +248,12 @@ function ContinueButton() {
 }
 ```
 
+## Interrupted navigation
+
+Routeveil intentionally runs one transition at a time. While a transition is active, additional `RouteveilLink`, `useRouteveilNavigate`, and `useRouteveilTransition` requests receive the active promise without queueing or committing another destination.
+
+Browser Back and Forward, ordinary React Router navigation, plain links, and direct history changes are external location changes. Routeveil respects the latest location, abandons an uncommitted Routeveil destination, cancels remaining visual work, and cleans up run-owned animations, inert state, temporary attributes, overlays, timers, location waiters, and phase state. After a successful or external route change, Routeveil preserves meaningful focus moved by the application or focuses the incoming `RouteveilView` with `preventScroll`; same-page playback and failed unchanged navigation restore prior focus when appropriate.
+
 ## Preview without navigating
 
 `useRouteveilTransition` plays a transition on the current route without changing the URL, history, mounted route, or scroll position.
@@ -401,7 +417,7 @@ When the user prefers reduced motion, Routeveil bypasses decorative animation an
 - Modifier clicks, external links, downloads, and non-self targets retain native behavior
 - One active `RouteveilView` is supported per provider
 - Missing views and unknown transitions fall back to safe normal navigation
-- Concurrent Routeveil requests use an ignore-while-active policy
+- Concurrent Routeveil requests use the documented ignore-while-active policy
 - Shared-element transitions, cloned route trees, Next.js integration, and the browser View Transitions API are not included
 
 ## Development

@@ -114,7 +114,7 @@ export function ApiDocs() {
     <>
       <DocSection
         id="provider"
-        index="04"
+        index="05"
         intro="RouteveilProvider resolves transitions, coordinates their lifecycle, commits navigation at the correct phase, and restores visual state when the request finishes."
         title="Provider"
       >
@@ -147,7 +147,7 @@ export function ApiDocs() {
 
       <DocSection
         id="routeveil-link"
-        index="05"
+        index="06"
         intro="RouteveilLink extends React Router Link and adds an optional transition to eligible internal navigation."
         title="RouteveilLink"
       >
@@ -185,7 +185,7 @@ export function ApiDocs() {
 
       <DocSection
         id="routeveil-view"
-        index="06"
+        index="07"
         intro="RouteveilView registers the persistent wrapper animated by page transitions while leaving surrounding interface mounted."
         title="RouteveilView"
       >
@@ -219,7 +219,7 @@ export function ApiDocs() {
 
       <DocSection
         id="programmatic-navigation"
-        index="07"
+        index="08"
         intro="useRouteveilNavigate provides transition-aware navigation for buttons, flows, and application logic."
         title="Programmatic Navigation"
       >
@@ -246,6 +246,71 @@ export function ApiDocs() {
           position. Its promise resolves after reset. It also accepts an explicit
           <code> clickPosition</code> when a playback control needs a custom origin.
         </p>
+      </DocSection>
+
+      <DocSection
+        id="interrupted-navigation"
+        index="09"
+        intro="Routeveil runs one transition at a time, distinguishes additional Routeveil requests from external location changes, and always settles visual work before returning to idle."
+        title="Interrupted Navigation"
+      >
+        <p>
+          One transition run and one transition promise may be active at a time. An
+          additional <code>RouteveilLink</code>, <code>useRouteveilNavigate</code>, or
+          <code> useRouteveilTransition</code> request receives that active promise. Its
+          destination or playback request is ignored rather than queued, committed,
+          cancelled and restarted, or allowed to replace the current run.
+        </p>
+        <div className="doc-split">
+          <article>
+            <h3>Interaction blocking</h3>
+            <p>
+              During a page transition, <code>RouteveilView</code> becomes inert while
+              Routeveil owns the outgoing and incoming phases. During an overlay
+              transition, the full-screen overlay blocks pointer interaction. Persistent
+              interface outside <code>RouteveilView</code> may remain interactive, and
+              programmatic code or browser history can still change the location.
+            </p>
+          </article>
+          <article>
+            <h3>Browser history</h3>
+            <p>
+              Back, Forward, ordinary React Router navigation, plain links, and direct
+              history changes are external location changes. Routeveil respects the
+              latest location, cancels the current visual work, and abandons its pending
+              commit when the external change happens first. A route already committed
+              by Routeveil is never committed a second time.
+            </p>
+          </article>
+        </div>
+        <h3>Accessibility and Focus</h3>
+        <p>
+          After successful Routeveil navigation or an external route change, meaningful
+          focus already moved by the application is preserved. Otherwise Routeveil
+          focuses the incoming <code>RouteveilView</code> with
+          <code> preventScroll</code>. It never tries to focus a disconnected outgoing
+          trigger. Same-page playback restores the previously focused element when
+          appropriate, and a failed navigation that leaves the location unchanged
+          restores prior focus when it is still valid and focus has not intentionally
+          moved elsewhere.
+        </p>
+        <div className="doc-note">
+          <strong>Cleanup guarantees</strong>
+          <p>
+            Completed, failed, interrupted, and unmounted runs clean up every resource
+            owned by that run: animations, inert state, temporary attributes, overlays,
+            timers, location waiters, and transition phase. A stale run cannot resume,
+            navigate, move focus, scroll, or clear visual state owned by a newer run.
+          </p>
+        </div>
+        <div className="doc-note">
+          <strong>Current concurrency model</strong>
+          <p>
+            Routeveil intentionally uses ignore-while-active. It does not currently
+            support cancellation and replacement, transition request queues, or a
+            last-request-wins mode.
+          </p>
+        </div>
       </DocSection>
     </>
   )

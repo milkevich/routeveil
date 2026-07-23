@@ -50,7 +50,7 @@ export function TransitionDocs() {
     <>
       <DocSection
         id="page-transitions"
-        index="08"
+        index="10"
         intro="Page transitions animate the registered RouteveilView while persistent interface outside it remains mounted."
         title="Page Transitions"
       >
@@ -107,7 +107,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="overlay-transitions"
-        index="09"
+        index="11"
         intro="Overlay transitions mount above the complete application, cover the viewport before navigation, and reveal the incoming route only after it renders."
         title="Overlay Transitions"
       >
@@ -165,7 +165,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="transition-options"
-        index="10"
+        index="12"
         intro="For built-ins with configurable options, transitionOptions is selected from the chosen transition name and exposes the fields used by that implementation."
         title="Transition Options"
       >
@@ -211,10 +211,12 @@ export function TransitionDocs() {
           <article>
             <h3>Scroll behavior</h3>
             <p>
-              Successful transitioned navigation scrolls to the top instantly by
-              default. Set <code>smoothScrollToTop</code> for smooth scrolling.
-              <code> preventScrollReset</code> preserves the current position and
-              takes precedence over smooth scrolling.
+              Successful transitioned navigation without a hash scrolls to the top
+              instantly by default. Set <code>smoothScrollToTop</code> for smooth
+              scrolling. <code>preventScrollReset</code> preserves the current position
+              and takes precedence over smooth scrolling. Hash destinations retain
+              their native target behavior, while playback and cancelled runs do not
+              change scroll position.
             </p>
           </article>
           <article>

@@ -15,9 +15,27 @@
 
 - Install package: `npm install routeveil`
 - Public import entry: `routeveil/react-router`
-- Peer dependencies: React 19, React DOM 19, and React Router DOM 7.
+- React peer range: `^18.0.0 || ^19.0.0`.
+- React DOM peer range: `^18.0.0 || ^19.0.0`.
+- React Router DOM peer range: `^6.27.0 || ^7.0.0`.
 - Package format: ES module with included TypeScript declarations.
 - License: MIT.
+
+## Compatibility
+
+Exact tested combinations:
+
+- React 18.0.0, React DOM 18.0.0, React Router DOM 6.27.0.
+- React 18.3.1, React DOM 18.3.1, React Router DOM 6.30.4.
+- React 19.0.0, React DOM 19.0.0, React Router DOM 6.27.0.
+- React 19.2.8, React DOM 19.2.8, React Router DOM 6.30.4.
+- React 18.0.0, React DOM 18.0.0, React Router DOM 7.0.0.
+- React 18.3.1, React DOM 18.3.1, React Router DOM 7.18.1.
+- React 19.0.0, React DOM 19.0.0, React Router DOM 7.0.0.
+- React 19.2.8, React DOM 19.2.8, React Router DOM 7.18.1.
+- React 19.2.7, React DOM 19.2.7, React Router DOM 7.18.1, matching the repository lockfile.
+
+React Router 5, React Router 8, React Router DOM versions below 6.27.0, and untested combinations are unsupported. The public import remains `routeveil/react-router`.
 
 ## Core API
 
@@ -26,5 +44,14 @@
 - `RouteveilLink`: Adds an optional typed transition to React Router links.
 - `useRouteveilNavigate`: Performs transition-aware programmatic navigation.
 - `useRouteveilTransition`: Plays a transition without changing the route.
+
+## Interrupted navigation
+
+- Routeveil runs one active transition and exposes one active promise at a time.
+- Additional Routeveil links, navigation-hook calls, and playback requests receive the active promise without queueing or committing another destination.
+- Browser Back and Forward, ordinary React Router navigation, plain links, and direct history changes cancel current visual work and leave the latest external location in control.
+- Successful and external route changes preserve meaningful application focus or focus the incoming `RouteveilView` with `preventScroll`; playback and failed unchanged navigation restore prior focus when appropriate.
+- Every run cleans up its animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.
+- Routeveil does not currently support cancellation and replacement, request queues, or last-request-wins concurrency.
 
 The website, documentation, GitHub repository, and npm page above are the canonical public sources for Routeveil.

@@ -22,7 +22,7 @@ Routeveil is licensed under the MIT License.
 npm install routeveil
 ```
 
-Routeveil expects React 19, React DOM 19, and React Router DOM 7 as peer dependencies. It is distributed as an ES module and includes TypeScript declarations.
+Routeveil supports React `^18.0.0 || ^19.0.0`, React DOM `^18.0.0 || ^19.0.0`, and React Router DOM `^6.27.0 || ^7.0.0` as peer dependencies. It is distributed as an ES module and includes TypeScript declarations.
 
 ```ts
 import {
@@ -34,6 +34,24 @@ import {
 } from 'routeveil/react-router'
 ```
 
+## Compatibility
+
+The following exact combinations pass isolated packed-package installation, public import and dependency identity checks, strict TypeScript compilation, focused runtime navigation tests, and a production Vite build:
+
+- React 18.0.0, React DOM 18.0.0, React Router DOM 6.27.0.
+- React 18.3.1, React DOM 18.3.1, React Router DOM 6.30.4.
+- React 19.0.0, React DOM 19.0.0, React Router DOM 6.27.0.
+- React 19.2.8, React DOM 19.2.8, React Router DOM 6.30.4.
+- React 18.0.0, React DOM 18.0.0, React Router DOM 7.0.0.
+- React 18.3.1, React DOM 18.3.1, React Router DOM 7.18.1.
+- React 19.0.0, React DOM 19.0.0, React Router DOM 7.0.0.
+- React 19.2.8, React DOM 19.2.8, React Router DOM 7.18.1.
+- React 19.2.7, React DOM 19.2.7, React Router DOM 7.18.1, matching the repository lockfile.
+
+React Router 5 is unsupported. React Router 8 is unsupported by the current `routeveil/react-router` adapter. React Router DOM versions below 6.27.0 and untested combinations are unsupported. npm peer dependency warnings indicate that the consuming application is outside Routeveil's declared support range.
+
+React Router's `viewTransition` option is available throughout the supported Router range. `defaultShouldRevalidate` and `mask` remain available only when the installed React Router version exposes those options. TypeScript consumers require TypeScript 5.4 or newer, and React 18 TypeScript consumers need `@types/react` 18.2.6 or newer.
+
 ## Transition lifecycle
 
 For a page transition, Routeveil animates the registered route view out, commits React Router navigation, waits for the new location to render and paint, animates the view in, and restores idle state.
@@ -41,6 +59,18 @@ For a page transition, Routeveil animates the registered route view out, commits
 For an overlay transition, Routeveil covers the viewport, commits navigation only after the cover is opaque, waits for the new location, reveals the incoming route, and removes the overlay.
 
 Transitions are opt-in per navigation. Ordinary React Router links and navigation continue to work normally. Routeveil runs one transition request at a time.
+
+## Interrupted navigation
+
+Routeveil uses an ignore-while-active concurrency policy. One transition run and one transition promise may be active at a time. An additional `RouteveilLink`, `useRouteveilNavigate`, or `useRouteveilTransition` request receives the active promise. Its destination or playback request is ignored without queueing, committing another location, cancelling and restarting the run, or replacing the active request.
+
+Browser Back and Forward, ordinary React Router navigation, plain links, and direct history manipulation are external location changes rather than additional Routeveil requests. Routeveil respects the latest external location and cancels visual work owned by the current run. When an external change occurs before Routeveil commits, the pending Routeveil destination is abandoned. When it occurs after the Routeveil commit, Routeveil does not commit again or restore an older location.
+
+During page transitions, `RouteveilView` is inert. Full-screen overlays block pointer interaction while active. Persistent interface outside `RouteveilView` may remain interactive, and external navigation can still occur through browser history or application code.
+
+After successful Routeveil navigation or an external route change, meaningful connected focus already moved by the application is preserved. Otherwise Routeveil focuses the incoming `RouteveilView` with `preventScroll`. It never restores focus to a disconnected outgoing trigger. Same-page playback restores prior focus when appropriate. A failed navigation that leaves the location unchanged restores prior focus when it remains valid and focus has not intentionally moved elsewhere.
+
+Completed, failed, interrupted, and unmounted runs clean up their animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase. Stale runs cannot later navigate, move focus, scroll, or clear visual state owned by another run. Routeveil does not currently support cancellation and replacement, request queues, or last-request-wins concurrency.
 
 ## Core components and hooks
 
@@ -100,11 +130,13 @@ Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is
 
 - Overview: https://www.routeveil.dev/docs#overview
 - Installation: https://www.routeveil.dev/docs#installation
+- Compatibility: https://www.routeveil.dev/docs#compatibility
 - Quick Start: https://www.routeveil.dev/docs#quick-start
 - Provider: https://www.routeveil.dev/docs#provider
 - RouteveilLink: https://www.routeveil.dev/docs#routeveil-link
 - RouteveilView: https://www.routeveil.dev/docs#routeveil-view
 - Programmatic Navigation: https://www.routeveil.dev/docs#programmatic-navigation
+- Interrupted Navigation: https://www.routeveil.dev/docs#interrupted-navigation
 - Page Transitions: https://www.routeveil.dev/docs#page-transitions
 - Overlay Transitions: https://www.routeveil.dev/docs#overlay-transitions
 - Transition Options: https://www.routeveil.dev/docs#transition-options
