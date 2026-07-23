@@ -149,7 +149,7 @@ describe('static SEO and crawler assets', () => {
 
   it('provides a valid web manifest and 1200 by 630 social image', () => {
     const manifest = JSON.parse(readProjectFile('public/site.webmanifest'))
-    const image = readFileSync(resolve(process.cwd(), 'public/og-image.png'))
+    const image = readFileSync(resolve(process.cwd(), 'public/og-image-v2.png'))
 
     expect(manifest).toMatchObject({
       name: 'Routeveil',

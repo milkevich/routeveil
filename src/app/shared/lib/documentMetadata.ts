@@ -6,7 +6,7 @@ import {
 export const siteOrigin = 'https://www.routeveil.dev'
 export const repositoryUrl = 'https://github.com/milkevich/routeveil'
 export const npmPackageUrl = 'https://www.npmjs.com/package/routeveil'
-export const socialImageUrl = `${siteOrigin}/og-image.png`
+export const socialImageUrl = `${siteOrigin}/og-image-v2.png`
 export const documentLocationChangeEvent = 'routeveil:document-location-change'
 export const structuredDataElementId = 'routeveil-structured-data'
 const licenseUrl = 'https://spdx.org/licenses/MIT.html'
