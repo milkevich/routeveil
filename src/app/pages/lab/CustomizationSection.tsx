@@ -54,7 +54,7 @@ export function CustomizationSection() {
         </p>
       </header>
 
-      <div className="lab-card-grid lab-card-grid--customization">
+      <div className="lab-card-grid">
         {customizationLinks.map((item) => (
           <RouteveilLink
             className="transition-card customization-card"
@@ -75,7 +75,9 @@ export function CustomizationSection() {
             </span>
 
             <span className="transition-card__content">
-              <strong>{item.title}</strong>
+              <strong style={{
+                textWrap: "wrap"
+              }}>{item.title}</strong>
 
               <span className="transition-card__description">
                 {item.description}
