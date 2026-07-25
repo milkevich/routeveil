@@ -23,6 +23,13 @@ const customizationLinks = [
       'See the complete transitionOptions reference and TypeScript behavior.',
     to: '/docs#transition-options',
   },
+  {
+    index: '04',
+    title: 'Shared Elements',
+    description:
+      'Explore shared images moving between a masonry gallery and detail route.',
+    to: '/lab/shared-elements',
+  },
 ] as const
 
 export function CustomizationSection() {
