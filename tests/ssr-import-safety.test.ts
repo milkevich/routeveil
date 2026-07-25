@@ -27,7 +27,11 @@ describe('server import safety', () => {
             React.createElement(
               api.RouteveilView,
               null,
-              React.createElement('main', null, 'Static route'),
+              React.createElement(
+                api.RouteveilSharedElement,
+                { name: 'static-route' },
+                React.createElement('main', null, 'Static route'),
+              ),
             ),
           ),
         ),
@@ -53,6 +57,7 @@ describe('server import safety', () => {
     expect(result.exports).toEqual([
       'RouteveilLink',
       'RouteveilProvider',
+      'RouteveilSharedElement',
       'RouteveilView',
       'useRouteveilNavigate',
       'useRouteveilTransition',

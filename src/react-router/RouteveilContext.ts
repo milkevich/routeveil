@@ -5,7 +5,22 @@ import type {
   OverlayAnimationHandle,
   OverlayTransitionDefinition,
 } from '../core/index.js'
-import type { RouteveilPhase, TransitionName } from './types.js'
+import type {
+  RouteveilPhase,
+  SharedElementsOption,
+  TransitionName,
+} from './types.js'
+import type { SharedElementRegistrationToken } from './shared-elements.js'
+
+export type SharedElementSource =
+  | {
+      kind: 'link'
+      trigger: Element
+    }
+  | {
+      kind: 'programmatic'
+      trigger: Element | null
+    }
 
 export type TransitionRequest = {
   to: To
@@ -15,8 +30,11 @@ export type TransitionRequest = {
   transitionOptions?: unknown
   navigateOptions?: NavigateOptions
   smoothScrollToTop?: boolean
+  scrollToSharedElement?: string
+  sharedElements?: SharedElementsOption
   clickPosition?: ClickPosition
   waitForLocationChange?: boolean
+  sharedElementSource?: SharedElementSource
 }
 
 export type ActiveOverlay = {
@@ -38,6 +56,11 @@ export type RouteveilContextValue = {
     id: number,
     handle: OverlayAnimationHandle | null,
   ) => void
+  registerSharedElement: (
+    token: SharedElementRegistrationToken,
+    name: string,
+    element: HTMLElement | SVGElement,
+  ) => () => void
 }
 
 export const RouteveilContext = createContext<RouteveilContextValue | null>(null)

@@ -40,6 +40,17 @@ import {
   isRouteveilDevelopment,
   warnOnce,
 } from './warnings.js'
+import {
+  createSharedElementSession,
+  resolveSharedElementScrollTarget,
+  selectSharedElementRegistrations,
+} from './shared-elements.js'
+import type {
+  SharedElementRegistration,
+  SharedElementRegistrationToken,
+  SharedElementSession,
+  SharedScrollTargetResolution,
+} from './shared-elements.js'
 
 type LocationSnapshot = {
   key: string
@@ -84,6 +95,10 @@ type TransitionRun = {
   finalized: boolean
   workReleased: boolean
   invokingCommit: boolean
+  sharedSession: SharedElementSession | null
+  sharedScrollFallback: boolean
+  sharedTargetDeadline: number | null
+  suppressIncomingView: boolean
 }
 
 type LocationWaiter = {
@@ -101,9 +116,16 @@ type OverlayReady = {
   resolve: (handle: OverlayAnimationHandle) => void
 }
 
+type SharedScrollTargetWaitResult = SharedScrollTargetResolution
+
 const LOCATION_WATCHDOG_MS = 10_000
 const ANIMATION_WATCHDOG_MS = 15_000
 const OVERLAY_READY_WATCHDOG_MS = 2_000
+const SHARED_TARGET_WATCHDOG_MS = 600
+const SHARED_TARGET_POLL_MS = 50
+const SHARED_SCROLL_WATCHDOG_MS = 1_200
+const SHARED_SCROLL_STABILIZATION_FRAMES = 6
+const SHARED_SCROLL_STABLE_FRAMES = 2
 const HISTORY_CHANGE_EVENT = 'routeveil:historychange'
 
 let historyInstrumentationUsers = 0
@@ -118,6 +140,115 @@ class TransitionLifecycleError extends Error {
     super(message)
     this.kind = kind
   }
+}
+
+function getSharedScrollTargetName(
+  request: TransitionRequest,
+): string | null {
+  const name = request.scrollToSharedElement?.trim()
+  return name || null
+}
+
+function shouldWaitForSharedScroll(
+  request: TransitionRequest,
+  allowSharedFallback = false,
+): boolean {
+  const hasHash = request.expectedPath.includes('#')
+  const hasSharedScrollTarget = getSharedScrollTargetName(request) !== null
+
+  return hasHash || (
+    request.smoothScrollToTop === true
+    && !request.navigateOptions?.preventScrollReset
+    && !hasHash
+    && (!hasSharedScrollTarget || allowSharedFallback)
+  )
+}
+
+function waitForSharedScroll(
+  request: TransitionRequest,
+  signal: AbortSignal,
+  allowSharedFallback = false,
+): Promise<void> {
+  const hasHash = request.expectedPath.includes('#')
+
+  if (
+    !shouldWaitForSharedScroll(request, allowSharedFallback)
+    || typeof window === 'undefined'
+    || typeof window.requestAnimationFrame !== 'function'
+  ) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let stableFrames = 0
+    let frame = 0
+    let timer = 0
+    let lastX = window.scrollX || 0
+    let lastY = window.scrollY || 0
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+
+      if (frame) {
+        window.cancelAnimationFrame(frame)
+      }
+
+      signal.removeEventListener('abort', abort)
+      window.removeEventListener('scrollend', finish)
+    }
+    const finish = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      resolve()
+    }
+    const abort = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      reject(new TransitionCancelledError())
+    }
+    const check = () => {
+      const currentX = window.scrollX || 0
+      const currentY = window.scrollY || 0
+      const isStable = hasHash
+        ? currentX === lastX && currentY === lastY
+        : currentX === 0 && currentY === 0
+
+      if (isStable) {
+        stableFrames += 1
+      } else {
+        stableFrames = 0
+      }
+
+      lastX = currentX
+      lastY = currentY
+
+      if (stableFrames >= (hasHash ? 4 : 2)) {
+        finish()
+        return
+      }
+
+      frame = window.requestAnimationFrame(check)
+    }
+
+    if (signal.aborted) {
+      abort()
+      return
+    }
+
+    signal.addEventListener('abort', abort, { once: true })
+    window.addEventListener('scrollend', finish, { once: true })
+    timer = window.setTimeout(finish, SHARED_SCROLL_WATCHDOG_MS)
+    frame = window.requestAnimationFrame(check)
+  })
 }
 
 function retainHistoryInstrumentation(): () => void {
@@ -424,6 +555,7 @@ function releaseRunWork(run: TransitionRun): void {
   run.animations.clear()
   restoreOwnedViews(run)
   resetOverlay(run)
+  run.sharedSession?.cleanup()
 }
 
 function isBlockedFromFocus(element: HTMLElement): boolean {
@@ -545,10 +677,17 @@ function applyFocusPolicy(
   restorePreviousFocus(run)
 }
 
-function scrollAfterNavigation(request: TransitionRequest): void {
+function scrollAfterNavigation(
+  request: TransitionRequest,
+  allowSharedFallback = false,
+): void {
   if (
     request.navigateOptions?.preventScrollReset
     || request.expectedPath.includes('#')
+    || (
+      getSharedScrollTargetName(request) !== null
+      && !allowSharedFallback
+    )
     || typeof window === 'undefined'
   ) {
     return
@@ -559,6 +698,51 @@ function scrollAfterNavigation(request: TransitionRequest): void {
     left: 0,
     behavior: request.smoothScrollToTop ? 'smooth' : 'instant',
   })
+}
+
+function scrollToSharedTarget(rect: {
+  top: number
+  height: number
+}): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return false
+  }
+
+  const documentElement = document.documentElement
+  const body = document.body
+  const viewportHeight = window.innerHeight || documentElement.clientHeight
+
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+    return false
+  }
+
+  const scrollHeight = Math.max(
+    documentElement.scrollHeight,
+    documentElement.offsetHeight,
+    documentElement.clientHeight,
+    body?.scrollHeight || 0,
+    body?.offsetHeight || 0,
+    body?.clientHeight || 0,
+  )
+  const currentX = Number.isFinite(window.scrollX) ? window.scrollX : 0
+  const currentY = Number.isFinite(window.scrollY) ? window.scrollY : 0
+  const maximumY = Math.max(0, scrollHeight - viewportHeight)
+  const requestedY = currentY
+    + rect.top
+    + rect.height / 2
+    - viewportHeight / 2
+  const targetY = Math.min(maximumY, Math.max(0, requestedY))
+
+  if (!Number.isFinite(targetY) || Math.abs(targetY - currentY) < 0.5) {
+    return false
+  }
+
+  window.scrollTo({
+    top: targetY,
+    left: currentX,
+    behavior: 'instant',
+  })
+  return true
 }
 
 function isOverlayDefinition(
@@ -629,6 +813,12 @@ export function RouteveilProvider({
   const mountedRef = useRef(true)
   const runIdRef = useRef(0)
   const overlayReadyRef = useRef<OverlayReady | null>(null)
+  const sharedRegistrationsRef = useRef(new Map<
+    SharedElementRegistrationToken,
+    SharedElementRegistration
+  >())
+  const sharedRegistrationOrderRef = useRef(0)
+  const sharedRegistrationListenersRef = useRef(new Set<() => void>())
 
   const resolvedTransitions = useMemo<Record<string, TransitionDefinition>>(
     () => ({
@@ -669,6 +859,197 @@ export function RouteveilProvider({
     ))
   }, [])
 
+  const notifySharedRegistrationChange = useCallback(() => {
+    for (const listener of [...sharedRegistrationListenersRef.current]) {
+      listener()
+    }
+  }, [])
+
+  const registerSharedElement = useCallback((
+    token: SharedElementRegistrationToken,
+    name: string,
+    element: HTMLElement | SVGElement,
+  ): (() => void) => {
+    const registration: SharedElementRegistration = {
+      token,
+      name,
+      element,
+      order: ++sharedRegistrationOrderRef.current,
+    }
+    sharedRegistrationsRef.current.set(token, registration)
+    notifySharedRegistrationChange()
+    let released = false
+
+    return () => {
+      if (released) {
+        return
+      }
+
+      released = true
+
+      if (sharedRegistrationsRef.current.get(token) === registration) {
+        sharedRegistrationsRef.current.delete(token)
+        notifySharedRegistrationChange()
+      }
+    }
+  }, [notifySharedRegistrationChange])
+
+  const waitForSharedScrollTarget = useCallback((
+    run: TransitionRun,
+    name: string,
+    targetCutoff: number,
+  ): Promise<SharedScrollTargetWaitResult> => new Promise((resolve) => {
+    const deadline = run.sharedTargetDeadline
+      ?? Date.now() + SHARED_TARGET_WATCHDOG_MS
+    run.sharedTargetDeadline = deadline
+    let settled = false
+    let pollTimer = 0
+    let watchdogTimer = 0
+    let removeRunCleanup: () => void = () => undefined
+
+    const settle = (result: SharedScrollTargetWaitResult) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      window.clearTimeout(pollTimer)
+      window.clearTimeout(watchdogTimer)
+      run.controller.signal.removeEventListener('abort', abort)
+      sharedRegistrationListenersRef.current.delete(check)
+      removeRunCleanup()
+      resolve(result)
+    }
+    const abort = () => settle({ status: 'missing' })
+    const check = () => {
+      const view = viewRef.current
+
+      if (!view || settled) {
+        return
+      }
+
+      let result: SharedScrollTargetResolution
+
+      try {
+        result = run.sharedSession
+          ? run.sharedSession.resolveScrollTarget(
+              sharedRegistrationsRef.current.values(),
+              view,
+              name,
+            )
+          : resolveSharedElementScrollTarget({
+              registrations: sharedRegistrationsRef.current.values(),
+              view,
+              name,
+              targetCutoff,
+            })
+      } catch {
+        settle({ status: 'missing' })
+        return
+      }
+
+      if (result.status !== 'pending') {
+        settle(result)
+      }
+    }
+    const poll = () => {
+      pollTimer = 0
+      check()
+
+      if (!settled) {
+        pollTimer = window.setTimeout(poll, SHARED_TARGET_POLL_MS)
+      }
+    }
+
+    if (run.controller.signal.aborted) {
+      abort()
+      return
+    }
+
+    sharedRegistrationListenersRef.current.add(check)
+    removeRunCleanup = registerCleanup(run, abort)
+    run.controller.signal.addEventListener('abort', abort, { once: true })
+    const remainingTime = Math.max(0, deadline - Date.now())
+    watchdogTimer = window.setTimeout(
+      () => settle({ status: 'missing' }),
+      remainingTime,
+    )
+    check()
+
+    if (!settled && remainingTime > 0) {
+      pollTimer = window.setTimeout(poll, SHARED_TARGET_POLL_MS)
+    } else if (!settled) {
+      settle({ status: 'missing' })
+    }
+  }), [])
+
+  const waitForSharedTargets = useCallback((
+    run: TransitionRun,
+    session: SharedElementSession,
+    view: HTMLElement,
+    deadline: number,
+    measureGeometry: boolean,
+  ): Promise<void> => new Promise((resolve) => {
+    let settled = false
+    let pollTimer = 0
+    let watchdogTimer = 0
+    let removeRunCleanup: () => void = () => undefined
+
+    const settle = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      window.clearTimeout(pollTimer)
+      window.clearTimeout(watchdogTimer)
+
+      run.controller.signal.removeEventListener('abort', settle)
+      sharedRegistrationListenersRef.current.delete(check)
+      removeRunCleanup()
+      resolve()
+    }
+    const check = () => {
+      try {
+        if (session.targetsReady(
+          sharedRegistrationsRef.current.values(),
+          view,
+          measureGeometry,
+        )) {
+          settle()
+        }
+      } catch {
+        settle()
+      }
+    }
+    const poll = () => {
+      pollTimer = 0
+      check()
+
+      if (!settled) {
+        pollTimer = window.setTimeout(poll, SHARED_TARGET_POLL_MS)
+      }
+    }
+
+    if (run.controller.signal.aborted) {
+      settle()
+      return
+    }
+
+    sharedRegistrationListenersRef.current.add(check)
+    removeRunCleanup = registerCleanup(run, settle)
+    run.controller.signal.addEventListener('abort', settle, { once: true })
+    const remainingTime = Math.max(0, deadline - Date.now())
+    watchdogTimer = window.setTimeout(settle, remainingTime)
+    check()
+
+    if (!settled && remainingTime > 0) {
+      pollTimer = window.setTimeout(poll, SHARED_TARGET_POLL_MS)
+    } else if (!settled) {
+      settle()
+    }
+  }), [])
+
   const prepareLocationWait = useCallback((
     run: TransitionRun,
   ): PreparedLocationWait => {
@@ -705,7 +1086,7 @@ export function RouteveilProvider({
     }
   }, [])
 
-  const observeLocation = useCallback((
+  const observeRenderedLocation = useCallback((
     currentLocation: LocationSnapshot,
     action: string,
   ): void => {
@@ -745,8 +1126,8 @@ export function RouteveilProvider({
   }, [])
 
   useLayoutEffect(() => {
-    observeLocation(getLocationSnapshot(location), navigationType)
-  }, [location, navigationType, observeLocation])
+    observeRenderedLocation(getLocationSnapshot(location), navigationType)
+  }, [location, navigationType, observeRenderedLocation])
 
   useLayoutEffect(() => {
     const router = dataRouterContext?.router
@@ -777,12 +1158,29 @@ export function RouteveilProvider({
         }
       }
 
-      observeLocation(
-        getLocationSnapshot(state.location),
-        state.historyAction,
+      const currentLocation = getLocationSnapshot(state.location)
+      const expectedAction = run?.request.navigateOptions?.replace
+        ? 'REPLACE'
+        : 'PUSH'
+      const awaitsRenderedLocation = Boolean(
+        run
+        && run.request.waitForLocationChange !== false
+        && run.commitState === 'committing'
+        && currentLocation.path === run.request.expectedPath
+        && state.historyAction === expectedAction,
       )
+
+      if (
+        run
+        && !run.finalized
+        && !run.controller.signal.aborted
+        && !locationsMatch(observedLocationRef.current, currentLocation)
+        && !awaitsRenderedLocation
+      ) {
+        cancelRun(run, 'external-location', currentLocation)
+      }
     })
-  }, [dataRouterContext?.router, observeLocation])
+  }, [dataRouterContext?.router])
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -817,10 +1215,33 @@ export function RouteveilProvider({
         ? event.detail
         : 'POP'
 
-      observeLocation({
+      const currentLocation = {
         key,
         path: `${pathname}${window.location.search}${window.location.hash}`,
-      }, action)
+      }
+      const expectedAction = run?.request.navigateOptions?.replace
+        ? 'REPLACE'
+        : 'PUSH'
+      const awaitsRenderedLocation = Boolean(
+        run
+        && run.request.waitForLocationChange !== false
+        && run.commitState === 'committing'
+        && currentLocation.path === run.request.expectedPath
+        && action === expectedAction,
+      )
+
+      if (awaitsRenderedLocation) {
+        return
+      }
+
+      if (
+        run
+        && !run.finalized
+        && !run.controller.signal.aborted
+        && !locationsMatch(observedLocationRef.current, currentLocation)
+      ) {
+        cancelRun(run, 'external-location', currentLocation)
+      }
     }
 
     const releaseInstrumentation = retainHistoryInstrumentation()
@@ -834,9 +1255,11 @@ export function RouteveilProvider({
       window.removeEventListener(HISTORY_CHANGE_EVENT, observeBrowserHistory)
       releaseInstrumentation()
     }
-  }, [navigationContext.basename, observeLocation])
+  }, [navigationContext.basename])
 
   useLayoutEffect(() => {
+    const sharedRegistrations = sharedRegistrationsRef.current
+    const sharedRegistrationListeners = sharedRegistrationListenersRef.current
     mountedRef.current = true
 
     return () => {
@@ -854,6 +1277,8 @@ export function RouteveilProvider({
 
       locationWaitersRef.current = []
       overlayReadyRef.current = null
+      sharedRegistrations.clear()
+      sharedRegistrationListeners.clear()
     }
   }, [])
 
@@ -870,13 +1295,27 @@ export function RouteveilProvider({
       }
 
       viewRef.current = element
+      const run = activeRunRef.current
+
+      if (
+        run?.sharedSession
+        && run.suppressIncomingView
+        && !run.controller.signal.aborted
+        && !run.finalized
+      ) {
+        claimView(run, element)
+        run.sharedSession.suppressView(element)
+      }
+
+      notifySharedRegistrationChange()
       return
     }
 
     if (!previousElement || viewRef.current === previousElement) {
       viewRef.current = null
+      notifySharedRegistrationChange()
     }
-  }, [])
+  }, [notifySharedRegistrationChange])
 
   const registerOverlayHandle = useCallback((
     id: number,
@@ -932,7 +1371,11 @@ export function RouteveilProvider({
     )
   }, [setRunPhase])
 
-  const commitOnce = useCallback(async (run: TransitionRun): Promise<void> => {
+  const commitOnce = useCallback(async (
+    run: TransitionRun,
+    waitForPaint = true,
+    allowSharedScroll = false,
+  ): Promise<void> => {
     assertRunCurrent(run)
 
     if (run.commitState !== 'pending') {
@@ -943,6 +1386,7 @@ export function RouteveilProvider({
     const locationWait = waitsForLocation
       ? prepareLocationWait(run)
       : null
+    const sharedTargetCutoff = sharedRegistrationOrderRef.current
     run.commitState = 'committing'
 
     let navigationResult: void | Promise<void>
@@ -971,8 +1415,12 @@ export function RouteveilProvider({
       await navigationPromise
       assertRunCurrent(run)
       run.commitState = 'committed'
-      await nextPaint(run.controller.signal)
-      assertRunCurrent(run)
+
+      if (waitForPaint) {
+        await nextPaint(run.controller.signal)
+        assertRunCurrent(run)
+      }
+
       return
     }
 
@@ -1004,10 +1452,62 @@ export function RouteveilProvider({
       )
     }
 
-    await nextPaint(run.controller.signal)
-    assertRunCurrent(run)
-    scrollAfterNavigation(run.request)
-  }, [assertRunCurrent, prepareLocationWait])
+    if (waitForPaint) {
+      await nextPaint(run.controller.signal)
+      assertRunCurrent(run)
+    }
+
+    const sharedScrollTargetName = allowSharedScroll
+      ? getSharedScrollTargetName(run.request)
+      : null
+    let handledSharedScroll = false
+
+    if (
+      sharedScrollTargetName
+      && !run.request.expectedPath.includes('#')
+    ) {
+      const result = await waitForSharedScrollTarget(
+        run,
+        sharedScrollTargetName,
+        sharedTargetCutoff,
+      )
+      assertRunCurrent(run)
+
+      if (result.status === 'ready') {
+        handledSharedScroll = true
+
+        if (scrollToSharedTarget(result.rect) && !run.sharedSession) {
+          await nextPaint(run.controller.signal)
+          assertRunCurrent(run)
+        }
+      } else {
+        run.sharedScrollFallback = true
+
+        if (result.status === 'duplicate') {
+          warnOnce(
+            `shared-scroll-target-duplicate:${sharedScrollTargetName}`,
+            `Routeveil: Multiple incoming shared elements use the name “${sharedScrollTargetName}”. scrollToSharedElement was ignored and existing scroll behavior was used.`,
+          )
+        } else {
+          warnOnce(
+            `shared-scroll-target-missing:${sharedScrollTargetName}`,
+            `Routeveil: No measurable incoming shared element named “${sharedScrollTargetName}” was found. scrollToSharedElement was ignored and existing scroll behavior was used.`,
+          )
+        }
+      }
+    }
+
+    if (!handledSharedScroll) {
+      scrollAfterNavigation(
+        run.request,
+        run.sharedScrollFallback || !allowSharedScroll,
+      )
+    }
+  }, [
+    assertRunCurrent,
+    prepareLocationWait,
+    waitForSharedScrollTarget,
+  ])
 
   const finalizeRun = useCallback((run: TransitionRun): void => {
     if (run.finalized) {
@@ -1031,6 +1531,7 @@ export function RouteveilProvider({
   const stopVisualWork = useCallback((run: TransitionRun): void => {
     cancelAnimations([...run.animations])
     resetOverlay(run)
+    run.sharedSession?.cleanup()
 
     if (overlayReadyRef.current?.id === run.id) {
       overlayReadyRef.current = null
@@ -1062,7 +1563,7 @@ export function RouteveilProvider({
 
       if (prefersReducedMotion()) {
         setRunPhase(run, 'navigating')
-        await commitOnce(run)
+        await commitOnce(run, true, definition.type === 'page')
         assertRunCurrent(run)
         return
       }
@@ -1076,7 +1577,7 @@ export function RouteveilProvider({
             `Routeveil: The “${request.transition}” page transition requires a <RouteveilView>. Navigation continued without animation.`,
           )
           setRunPhase(run, 'navigating')
-          await commitOnce(run)
+          await commitOnce(run, true, true)
           assertRunCurrent(run)
           return
         }
@@ -1084,6 +1585,72 @@ export function RouteveilProvider({
         const phases = definition.resolve?.(
           request.transitionOptions,
         ) ?? definition
+        let sharedSession: SharedElementSession | null = null
+        let releaseSharedSessionCleanup: () => void = () => undefined
+        const sharedAnimations = new Set<Animation>()
+        const cleanupSharedSession = () => {
+          if (!sharedSession) {
+            return
+          }
+
+          sharedSession.cleanup()
+
+          for (const animation of sharedAnimations) {
+            run.animations.delete(animation)
+          }
+
+          sharedAnimations.clear()
+          releaseSharedSessionCleanup()
+          run.sharedSession = null
+          run.suppressIncomingView = false
+          sharedSession = null
+        }
+
+        if (
+          request.waitForLocationChange !== false
+          && request.sharedElementSource
+          && sharedRegistrationsRef.current.size > 0
+        ) {
+          const selection = selectSharedElementRegistrations({
+            registrations: sharedRegistrationsRef.current.values(),
+            scrollToSharedElement: request.scrollToSharedElement,
+            sharedElements: request.sharedElements,
+            view: pageView,
+            trigger: request.sharedElementSource.trigger,
+            triggerKind: request.sharedElementSource.kind,
+          })
+
+          for (const name of selection.duplicateNames) {
+            warnOnce(
+              `shared-source-duplicate:${name}`,
+              `Routeveil: Multiple outgoing shared elements use the name “${name}”. That name was skipped for this transition.`,
+            )
+          }
+
+          try {
+            sharedSession = createSharedElementSession(
+              selection.registrations,
+              pageView,
+              sharedRegistrationOrderRef.current,
+            )
+          } catch {
+            sharedSession = null
+          }
+
+          if (sharedSession) {
+            run.sharedSession = sharedSession
+            releaseSharedSessionCleanup = registerCleanup(
+              run,
+              () => sharedSession?.cleanup(),
+            )
+          } else if (selection.registrations.length > 0) {
+            warnOnce(
+              'shared-source-invalid-geometry',
+              'Routeveil: The selected shared element could not be measured or cloned. The page transition continued without shared-element movement.',
+            )
+          }
+        }
+
         claimView(run, pageView)
         setRunPhase(run, 'exiting')
 
@@ -1106,11 +1673,194 @@ export function RouteveilProvider({
         assertRunCurrent(run)
 
         setRunPhase(run, 'navigating')
-        await commitOnce(run)
+
+        let revealSharedViewAfterEnterStarts = false
+
+        if (sharedSession) {
+          run.suppressIncomingView = true
+          sharedSession.suppressView(pageView)
+          sharedSession.setTargetCutoff(
+            sharedRegistrationOrderRef.current,
+            !shouldWaitForSharedScroll(request),
+          )
+          cancelAnimation(exitAnimation)
+        }
+
+        await commitOnce(
+          run,
+          sharedSession === null
+          || getSharedScrollTargetName(request) !== null,
+          true,
+        )
         assertRunCurrent(run)
+
+        if (sharedSession) {
+          await nextPaint(run.controller.signal)
+          assertRunCurrent(run)
+        }
 
         const enteringView = viewRef.current ?? pageView
         claimView(run, enteringView)
+
+        if (sharedSession) {
+          sharedSession.suppressView(enteringView)
+          const sharedTargetDeadline = run.sharedTargetDeadline
+            ?? Date.now() + SHARED_TARGET_WATCHDOG_MS
+          run.sharedTargetDeadline = sharedTargetDeadline
+          await waitForSharedTargets(
+            run,
+            sharedSession,
+            enteringView,
+            sharedTargetDeadline,
+            false,
+          )
+          assertRunCurrent(run)
+          await waitForSharedScroll(
+            request,
+            run.controller.signal,
+            run.sharedScrollFallback,
+          )
+          assertRunCurrent(run)
+
+          if (shouldWaitForSharedScroll(
+            request,
+            run.sharedScrollFallback,
+          )) {
+            await nextPaint(run.controller.signal)
+            assertRunCurrent(run)
+          }
+
+          await waitForSharedTargets(
+            run,
+            sharedSession,
+            enteringView,
+            sharedTargetDeadline,
+            true,
+          )
+          assertRunCurrent(run)
+
+          const sharedScrollTargetName = getSharedScrollTargetName(request)
+
+          if (
+            sharedScrollTargetName
+            && !run.sharedScrollFallback
+            && !request.expectedPath.includes('#')
+          ) {
+            let stableFrames = 0
+
+            for (
+              let frame = 0;
+              frame < SHARED_SCROLL_STABILIZATION_FRAMES;
+              frame += 1
+            ) {
+              const verification = sharedSession.resolveScrollTarget(
+                sharedRegistrationsRef.current.values(),
+                enteringView,
+                sharedScrollTargetName,
+              )
+
+              if (verification.status !== 'ready') {
+                break
+              }
+
+              if (scrollToSharedTarget(verification.rect)) {
+                stableFrames = 0
+              } else {
+                stableFrames += 1
+
+                if (stableFrames >= SHARED_SCROLL_STABLE_FRAMES) {
+                  break
+                }
+              }
+
+              await nextPaint(run.controller.signal)
+              assertRunCurrent(run)
+            }
+          }
+
+          let preparation = {
+            matchedNames: [] as string[],
+            missingNames: [] as string[],
+            duplicateNames: [] as string[],
+          }
+
+          try {
+            preparation = sharedSession.prepareTargets(
+              sharedRegistrationsRef.current.values(),
+              enteringView,
+            )
+          } catch {
+            warnOnce(
+              'shared-target-preparation-failed',
+              'Routeveil: Incoming shared elements could not be prepared. The page transition continued with its normal enter phase.',
+            )
+          }
+
+          for (const name of preparation.duplicateNames) {
+            warnOnce(
+              `shared-target-duplicate:${name}`,
+              `Routeveil: Multiple incoming shared elements use the name “${name}”. That name was skipped for this transition.`,
+            )
+          }
+
+          for (const name of preparation.missingNames) {
+            warnOnce(
+              `shared-target-missing:${name}`,
+              `Routeveil: No measurable incoming shared element named “${name}” was found. The page transition continued normally.`,
+            )
+          }
+
+          let keepSharedSessionThroughEnter = false
+
+          if (preparation.matchedNames.length > 0) {
+            try {
+              keepSharedSessionThroughEnter = await waitForTask(
+                run,
+                sharedSession.animate(
+                  run.controller.signal,
+                  (animation) => {
+                    run.animations.add(animation)
+                    sharedAnimations.add(animation)
+                  },
+                ),
+                ANIMATION_WATCHDOG_MS,
+                new TransitionLifecycleError(
+                  'animation-timeout',
+                  'Routeveil shared-element movement did not settle.',
+                ),
+                () => sharedSession?.cleanup(),
+              )
+              assertRunCurrent(run)
+            } catch (error) {
+              if (
+                error instanceof TransitionCancelledError
+                || run.controller.signal.aborted
+              ) {
+                throw error
+              }
+
+              warnOnce(
+                'shared-element-movement-failed',
+                'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
+              )
+            }
+          }
+
+          for (const animation of sharedAnimations) {
+            run.animations.delete(animation)
+          }
+
+          sharedAnimations.clear()
+
+          if (keepSharedSessionThroughEnter) {
+            revealSharedViewAfterEnterStarts = true
+          } else {
+            cleanupSharedSession()
+          }
+
+          assertRunCurrent(run)
+        }
+
         setRunPhase(run, 'entering')
         const enterPromise = animatePhase(
           enteringView,
@@ -1118,6 +1868,11 @@ export function RouteveilProvider({
           (animation) => run.animations.add(animation),
         )
         cancelAnimation(exitAnimation)
+
+        if (revealSharedViewAfterEnterStarts && sharedSession) {
+          sharedSession.revealViews()
+          run.suppressIncomingView = false
+        }
 
         await waitForTask(
           run,
@@ -1130,6 +1885,28 @@ export function RouteveilProvider({
           () => cancelAnimations([...run.animations]),
         )
         assertRunCurrent(run)
+
+        if (sharedSession) {
+          await waitForTask(
+            run,
+            sharedSession.handoff(
+              run.controller.signal,
+              (animation) => {
+                run.animations.add(animation)
+                sharedAnimations.add(animation)
+              },
+            ),
+            ANIMATION_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'animation-timeout',
+              'Routeveil shared-element handoff did not settle.',
+            ),
+            () => sharedSession?.cleanup(),
+          )
+          assertRunCurrent(run)
+        }
+
+        cleanupSharedSession()
         return
       }
 
@@ -1185,7 +1962,7 @@ export function RouteveilProvider({
       if (run.commitState === 'pending' && isRunCurrent(run)) {
         try {
           setRunPhase(run, 'navigating')
-          await commitOnce(run)
+          await commitOnce(run, true, definition.type === 'page')
           assertRunCurrent(run)
         } catch (commitError) {
           if (
@@ -1208,6 +1985,7 @@ export function RouteveilProvider({
     resolvedTransitions,
     setRunPhase,
     stopVisualWork,
+    waitForSharedTargets,
   ])
 
   const transitionTo = useCallback((
@@ -1246,6 +2024,10 @@ export function RouteveilProvider({
       finalized: false,
       workReleased: false,
       invokingCommit: false,
+      sharedSession: null,
+      sharedScrollFallback: false,
+      sharedTargetDeadline: null,
+      suppressIncomingView: false,
     }
 
     activeRunRef.current = run
@@ -1274,11 +2056,13 @@ export function RouteveilProvider({
       transitionTo,
       registerView,
       registerOverlayHandle,
+      registerSharedElement,
     }),
     [
       activeOverlay,
       phase,
       registerOverlayHandle,
+      registerSharedElement,
       registerView,
       transitionTo,
     ],

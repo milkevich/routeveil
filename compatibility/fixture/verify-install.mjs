@@ -23,6 +23,7 @@ const publicApi = await import('routeveil/react-router')
 const expectedExports = [
   'RouteveilLink',
   'RouteveilProvider',
+  'RouteveilSharedElement',
   'RouteveilView',
   'useRouteveilNavigate',
   'useRouteveilTransition',

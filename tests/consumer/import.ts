@@ -1,4 +1,4 @@
-import { Component } from 'react'
+import { Component, createElement } from 'react'
 import type {
   AnimationPhaseDefinition,
   BuiltInOverlayTransitionName,
@@ -34,7 +34,9 @@ import type {
   RouteveilPlayOptions,
   RouteveilPhase,
   RouteveilProviderProps,
+  RouteveilSharedElementProps,
   RouteveilViewProps,
+  SharedElementsOption,
   RotateDirection,
   RotateTransitionOptions,
   RowDirection,
@@ -54,6 +56,7 @@ import type {
 import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -70,6 +73,7 @@ type Expect<TValue extends true> = TValue
 export const routeveilApi = {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -134,6 +138,8 @@ export type ConsumerPublicTypes = {
   pixelOptions: PixelOverlayOptions
   playOptions: RouteveilPlayOptions
   providerProps: RouteveilProviderProps
+  sharedElementProps: RouteveilSharedElementProps
+  sharedElementsOption: SharedElementsOption
   radialOrigin: RadialOrigin
   routeveilPhase: RouteveilPhase
   rowDirection: RowDirection
@@ -191,9 +197,18 @@ export const rotateLink = RouteveilLink({
 })
 
 export const smoothScrollLink = RouteveilLink({
+  scrollToSharedElement: 'consumer-example',
   to: '/',
   smoothScrollToTop: true,
   transition: 'fade',
+})
+
+export const sharedElement = RouteveilSharedElement({
+  name: 'consumer-example',
+  children: createElement(RouteveilLink, {
+    to: '/',
+    transition: 'fade',
+  }),
 })
 
 export const instantScrollLinkProps = {
@@ -203,7 +218,24 @@ export const instantScrollLinkProps = {
 } satisfies RouteveilLinkProps<'fade'>
 
 export const smoothScrollNavigateOptions = {
+  scrollToSharedElement: 'consumer-example',
   smoothScrollToTop: true,
+  transition: 'fade',
+} satisfies RouteveilNavigateOptions<'fade'>
+
+export const explicitSharedLinkProps = {
+  sharedElements: ['consumer-image', 'consumer-title'] as const,
+  to: '/',
+  transition: 'fade',
+} satisfies RouteveilLinkProps<'fade'>
+
+export const routeWideSharedNavigateOptions = {
+  sharedElements: 'all',
+  transition: 'fade',
+} satisfies RouteveilNavigateOptions<'fade'>
+
+export const disabledSharedNavigateOptions = {
+  sharedElements: false,
   transition: 'fade',
 } satisfies RouteveilNavigateOptions<'fade'>
 
@@ -289,6 +321,7 @@ export function checkRotateNavigate(navigate: RouteveilNavigate): void {
 
   void navigate('/', {
     preventScrollReset: true,
+    scrollToSharedElement: 'consumer-example',
     smoothScrollToTop: true,
     transition: 'fade',
   })

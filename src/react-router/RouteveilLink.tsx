@@ -88,6 +88,8 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
     state,
     preventScrollReset,
     smoothScrollToTop,
+    scrollToSharedElement,
+    sharedElements,
     relative,
     viewTransition,
     defaultShouldRevalidate,
@@ -150,6 +152,8 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       },
       transitionOptions,
       smoothScrollToTop,
+      scrollToSharedElement,
+      sharedElements,
       clickPosition: event.detail === 0
         ? undefined
         : {
@@ -164,6 +168,10 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
         viewTransition: false,
         defaultShouldRevalidate,
         mask,
+      },
+      sharedElementSource: {
+        kind: 'link',
+        trigger: event.currentTarget,
       },
     })
   }

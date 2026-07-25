@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import type {
   LinkProps,
   NavigateOptions,
@@ -79,12 +79,26 @@ export type RouteveilViewProps = {
   style?: CSSProperties
 }
 
+export type RouteveilSharedElementProps = {
+  name: string
+  children: ReactElement
+}
+
+export type SharedElementsOption =
+  | 'all'
+  | 'auto'
+  | false
+  | string
+  | readonly string[]
+
 export type RouteveilLinkProps<
   TTransition extends TransitionName = TransitionName,
 > = LinkProps & {
   transition?: TTransition
   transitionOptions?: TransitionOptionsFor<NoInfer<TTransition>>
   smoothScrollToTop?: boolean
+  scrollToSharedElement?: string
+  sharedElements?: SharedElementsOption
 }
 
 export type RouteveilNavigateOptions<
@@ -93,6 +107,8 @@ export type RouteveilNavigateOptions<
   transition?: TTransition
   transitionOptions?: TransitionOptionsFor<NoInfer<TTransition>>
   smoothScrollToTop?: boolean
+  scrollToSharedElement?: string
+  sharedElements?: SharedElementsOption
 }
 
 export type RouteveilNavigate = <

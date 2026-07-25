@@ -725,6 +725,53 @@ describe('external location interruption', () => {
 })
 
 describe('browser history interruption matrix', () => {
+  it('waits for the rendered destination after an expected pushState event', async () => {
+    const harness = setup()
+    const navigationWork = createDeferred()
+    const tracked = trackPromise(harness.request({
+      commit: () => navigationWork.promise,
+      expectedPath: '/target',
+      to: '/target',
+      transition: 'controlled-page',
+    }))
+
+    await finishNextAnimation(harness)
+    expect(harness.phase()).toBe('navigating')
+    expect(screen.getByRole('heading', { name: '/start' })).toBeInTheDocument()
+
+    act(() => {
+      window.history.pushState({ key: 'expected' }, '', '/target')
+    })
+    await act(async () => {
+      navigationWork.resolve()
+      await Promise.resolve()
+    })
+    await flushPaint(harness)
+
+    expect(harness.phase()).toBe('navigating')
+    expect(screen.getByRole('heading', { name: '/start' })).toBeInTheDocument()
+    expect(harness.browser.animations).toHaveLength(1)
+
+    await act(async () => {
+      await harness.router.navigate('/target')
+    })
+    await flushPaint(harness)
+
+    expect(harness.phase()).toBe('entering')
+    expect(screen.getByRole('heading', { name: '/target' })).toBeInTheDocument()
+    const enter = runningAnimation(harness)
+
+    await act(async () => {
+      enter.finish()
+      await tracked.promise
+    })
+
+    expectCleanLifecycle(harness)
+    act(() => {
+      window.history.replaceState(null, '', '/')
+    })
+  })
+
   it('detects an external key change when the URL text is unchanged', async () => {
     const harness = setup()
     const startingKey = harness.router.state.location.key

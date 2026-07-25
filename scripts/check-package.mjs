@@ -18,6 +18,7 @@ const builtEntryPath = resolve(
 const expectedExports = [
   'RouteveilLink',
   'RouteveilProvider',
+  'RouteveilSharedElement',
   'RouteveilView',
   'useRouteveilNavigate',
   'useRouteveilTransition',
@@ -101,6 +102,7 @@ for (const name of ['window', 'document', 'Element', 'Animation', 'matchMedia'])
 const publicApi = await import('routeveil/react-router')
 assert.deepEqual(Object.keys(publicApi).sort(), expectedExports.toSorted())
 assert.ok(publicApi.RouteveilLink)
+assert.ok(publicApi.RouteveilSharedElement)
 assert.ok(publicApi.RouteveilView)
 assert.equal(typeof publicApi.RouteveilProvider, 'function')
 assert.equal(typeof publicApi.useRouteveilNavigate, 'function')
@@ -125,7 +127,11 @@ const serverMarkup = renderToString(
       createElement(
         publicApi.RouteveilView,
         { className: 'route-stage' },
-        createElement('main', null, 'Documentation'),
+        createElement(
+          publicApi.RouteveilSharedElement,
+          { name: 'documentation' },
+          createElement('main', null, 'Documentation'),
+        ),
       ),
       createElement('footer', { 'data-package-shell': 'footer' }, 'Footer'),
     ),

@@ -83,11 +83,13 @@ function LocationProbe() {
 
 function DeclarativeApp({
   preventScrollReset,
+  scrollToSharedElement,
   smoothScrollToTop,
   transition = 'fade',
   transitionOptions,
 }: {
   preventScrollReset?: boolean
+  scrollToSharedElement?: string
   smoothScrollToTop?: boolean
   transition?: string
   transitionOptions?: unknown
@@ -99,6 +101,7 @@ function DeclarativeApp({
         <RouteveilLink
           to="/about"
           preventScrollReset={preventScrollReset}
+          scrollToSharedElement={scrollToSharedElement}
           smoothScrollToTop={smoothScrollToTop}
           transition={transition}
           transitionOptions={transitionOptions}
@@ -266,6 +269,17 @@ describe('RouteveilView and page transitions', () => {
     })
 
     await finish(browser.animations[1])
+  })
+
+  it('does not forward the shared scroll target to the anchor element', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <DeclarativeApp scrollToSharedElement="project-cover" />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: 'About' }))
+      .not.toHaveAttribute('scrolltosharedelement')
   })
 
   it('resolves slide direction options for both exit and enter phases', async () => {
@@ -567,10 +581,12 @@ describe('RouteveilLink navigation semantics', () => {
 describe('programmatic and fallback navigation', () => {
   function ProgrammaticButton({
     preventScrollReset = true,
+    scrollToSharedElement,
     smoothScrollToTop,
     transition = 'fade',
   }: {
     preventScrollReset?: boolean
+    scrollToSharedElement?: string
     smoothScrollToTop?: boolean
     transition?: string
   }) {
@@ -584,6 +600,7 @@ describe('programmatic and fallback navigation', () => {
             setStatus('pending')
             void navigate('/about', {
               preventScrollReset,
+              scrollToSharedElement,
               smoothScrollToTop,
               state: { source: 'programmatic' },
               transition,
@@ -723,6 +740,7 @@ describe('programmatic and fallback navigation', () => {
         <RouteveilProvider>
           <ProgrammaticButton
             preventScrollReset={false}
+            scrollToSharedElement="missing-shared-anchor"
             smoothScrollToTop
             transition="test-unknown-wave"
           />
