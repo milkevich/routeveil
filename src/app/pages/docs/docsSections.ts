@@ -9,6 +9,7 @@ export const docsSections = [
   { id: 'programmatic-navigation', label: 'Programmatic Navigation' },
   { id: 'interrupted-navigation', label: 'Interrupted Navigation' },
   { id: 'page-transitions', label: 'Page Transitions' },
+  { id: 'shared-elements', label: 'Shared Elements' },
   { id: 'overlay-transitions', label: 'Overlay Transitions' },
   { id: 'transition-options', label: 'Transition Options' },
   { id: 'reduced-motion', label: 'Reduced Motion' },

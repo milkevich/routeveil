@@ -125,6 +125,8 @@ describe('DocumentMetadata', () => {
     ['/docs', '#installation'],
     ['/lab', ''],
     ['/lab/', ''],
+    ['/lab/shared-elements', ''],
+    ['/lab/shared-elements/detail', ''],
     ['/missing', ''],
     ['/docs/installation', ''],
   ])('applies complete metadata for %s%s', (pathname, hash) => {

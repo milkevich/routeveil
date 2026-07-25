@@ -89,6 +89,14 @@ const pages: PageDefinition[] = [
           <p>Routeveil runs one transition and one active promise at a time. Additional Routeveil navigation and playback requests reuse that promise without queueing or committing another destination.</p>
           <p>Browser history and other external location changes cancel current visual work, leave the latest location in control, preserve meaningful application focus or focus the incoming RouteveilView with preventScroll, and clean up animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.</p>
         </section>
+        <section id="shared-elements">
+          <h2>Shared Elements</h2>
+          <p>RouteveilSharedElement connects matching real HTML or SVG elements across routes by a unique name without adding a layout wrapper.</p>
+          <p>Shared elements compose with page transitions in a strict sequence: page exit → shared-element movement → page enter. They are not transitions named shared or shared-element. Multiple valid matches move concurrently, different tags crossfade, and each settled clone stays over its hidden real target until page enter completes. Missing or duplicate targets are skipped without blocking navigation.</p>
+          <p>Use scrollToSharedElement with an exact incoming shared-element name to center it vertically while preserving horizontal scroll before endpoint measurement. URL hashes take precedence; valid anchors override preventScrollReset and smoothScrollToTop, while missing or duplicate anchors warn and fall back to the existing scroll policy. Reduced-motion navigation still applies valid anchor positioning.</p>
+          <p>Overlay transitions, same-page playback, browser-history navigation, and reduced-motion navigation do not run shared-element movement.</p>
+          <a href="/lab/shared-elements">Open the shared elements playground</a>
+        </section>
         <nav aria-label="Documentation sections">
           ${docsNavigation}
         </nav>
@@ -110,7 +118,35 @@ const pages: PageDefinition[] = [
           <h2>Overlay transitions</h2>
           <p>Pixel, curtain, wipe, columns, rows, iris, halo, tunnel, clock, venetian, mosaic, and dissolve.</p>
         </section>
+        <a href="/lab/shared-elements">Explore shared-element transitions</a>
         <a href="/docs">Read the Routeveil documentation</a>
+      </main>
+    `,
+  },
+  {
+    file: 'lab/shared-elements.html',
+    pathname: '/lab/shared-elements',
+    fallback: `
+      <main>
+        <h1>Shared Elements</h1>
+        <p>Explore a masonry gallery of local images and open any post to preview a shared-element transition between real React Router routes.</p>
+        <p>The page transition exits first, the selected image moves to its incoming position, and the detail route enters beneath the settled clone before the real image takes over.</p>
+        <a href="/lab/shared-elements/detail">Open the shared elements detail</a>
+        <a href="/docs#shared-elements">Read the shared elements documentation</a>
+        <a href="/lab">Return to the laboratory</a>
+      </main>
+    `,
+  },
+  {
+    file: 'lab/shared-elements/detail.html',
+    pathname: '/lab/shared-elements/detail',
+    fallback: `
+      <main>
+        <h1>Shared Elements Detail</h1>
+        <p>Use the separate back control to play the selected image transition in reverse and return to its centered gallery position.</p>
+        <p>Routeveil matches the image by its unique name while the real application images remain the final source and target.</p>
+        <a href="/lab/shared-elements">Return to the shared elements overview</a>
+        <a href="/docs#shared-elements">Read the shared elements documentation</a>
       </main>
     `,
   },
@@ -331,6 +367,37 @@ for (const page of pages) {
         ),
       'documentation fallback is missing compatibility',
     )
+    invariant(
+      Boolean(fallbackDocument.getElementById('shared-elements'))
+        && Boolean(fallbackDocument.querySelector(
+          'a[href="/docs#shared-elements"]',
+        ))
+        && fallbackDocument.body.textContent?.includes(
+          'page exit → shared-element movement → page enter',
+        ),
+      'documentation fallback is missing shared elements',
+    )
+  }
+
+  if (page.pathname === '/lab') {
+    invariant(
+      Boolean(fallbackDocument.querySelector(
+        'a[href="/lab/shared-elements"]',
+      )),
+      'laboratory fallback is missing the shared elements demo',
+    )
+  }
+
+  if (
+    page.pathname === '/lab/shared-elements'
+    || page.pathname === '/lab/shared-elements/detail'
+  ) {
+    invariant(
+      Boolean(fallbackDocument.querySelector(
+        'a[href="/docs#shared-elements"]',
+      )),
+      `${page.pathname} fallback is missing shared elements documentation`,
+    )
   }
 
   const serialized = `<!doctype html>\n${document.documentElement.outerHTML}\n`
@@ -364,6 +431,11 @@ const llms = await readFile(resolve(buildRoot, 'llms.txt'), 'utf8')
 const llmsFull = await readFile(resolve(buildRoot, 'llms-full.txt'), 'utf8')
 
 invariant(sitemap.includes('https://www.routeveil.dev/docs'), 'sitemap is missing docs')
+invariant(
+  sitemap.includes('https://www.routeveil.dev/lab/shared-elements')
+    && !sitemap.includes('https://www.routeveil.dev/lab/shared-elements/detail'),
+  'sitemap shared elements routes are invalid',
+)
 invariant(robots.includes('User-agent: OAI-SearchBot'), 'robots is missing AI search access')
 invariant(robots.includes('Sitemap: https://www.routeveil.dev/sitemap.xml'), 'robots has the wrong sitemap')
 invariant(llms.includes('npm install routeveil'), 'llms.txt has the wrong install command')
@@ -393,6 +465,13 @@ invariant(
   llms.includes('Interrupted navigation')
     && llmsFull.includes('Interrupted navigation'),
   'AI-readable references are missing interrupted navigation',
+)
+invariant(
+  llms.includes('Shared elements')
+    && llms.includes('https://www.routeveil.dev/lab/shared-elements')
+    && llmsFull.includes('Shared elements')
+    && llmsFull.includes('https://www.routeveil.dev/lab/shared-elements'),
+  'AI-readable references are missing shared elements',
 )
 invariant(indexRobots.startsWith('index, follow'), 'indexing directives are invalid')
 

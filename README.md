@@ -37,6 +37,7 @@ Persistent UI can stay outside `RouteveilView`, while overlay transitions render
 import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -47,6 +48,7 @@ import {
 
 - Per-link and programmatic transitions
 - Page transitions scoped to `RouteveilView`
+- Shared elements composed with page transitions
 - Full-screen overlay transitions
 - Typed transition-specific options
 - Cursor-aware radial effects
@@ -175,6 +177,35 @@ Omit `transition` to use ordinary React Router navigation:
   About without animation
 </RouteveilLink>
 ```
+
+## Shared elements
+
+Wrap the same conceptual element on both routes with a unique name. Shared movement
+composes automatically with the selected page transition as three sequential phases:
+page exit → shared-element movement → page enter.
+
+```tsx
+import {
+  RouteveilLink,
+  RouteveilSharedElement,
+} from 'routeveil/react-router'
+
+<RouteveilLink
+  to="/projects/routeveil"
+  transition="slide"
+  scrollToSharedElement="project-cover"
+>
+  <RouteveilSharedElement name="project-cover">
+    <img src="/project.jpg" alt="Project" />
+  </RouteveilSharedElement>
+</RouteveilLink>
+```
+
+Register the same name on the destination element. Shared elements work with page
+transitions only; overlay transitions and same-page playback ignore them. See the
+[Shared Elements documentation](https://www.routeveil.dev/docs#shared-elements) for
+matching, source selection, multiple elements, fallbacks, and limitations, or
+[open the shared elements playground](https://www.routeveil.dev/lab/shared-elements).
 
 ## Data routers and layout routes
 
@@ -405,6 +436,13 @@ Use `smoothScrollToTop` for a smooth reset:
 
 Use `preventScrollReset` to preserve the current position. It takes precedence over `smoothScrollToTop`.
 
+Use `scrollToSharedElement` with the exact `name` of an incoming
+`RouteveilSharedElement` to center that element vertically before shared endpoints are
+measured. A valid anchor preserves horizontal scroll and overrides both
+`preventScrollReset` and `smoothScrollToTop`. A URL hash takes precedence over the
+anchor. If the name is missing, duplicated, or unmeasurable, Routeveil warns and falls
+back to the existing scroll policy.
+
 ## Reduced motion
 
 When the user prefers reduced motion, Routeveil bypasses decorative animation and safely completes navigation.
@@ -418,7 +456,7 @@ When the user prefers reduced motion, Routeveil bypasses decorative animation an
 - One active `RouteveilView` is supported per provider
 - Missing views and unknown transitions fall back to safe normal navigation
 - Concurrent Routeveil requests use the documented ignore-while-active policy
-- Shared-element transitions, cloned route trees, Next.js integration, and the browser View Transitions API are not included
+- Cloned route trees, Next.js integration, and the browser View Transitions API are not included
 
 ## Development
 

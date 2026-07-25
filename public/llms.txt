@@ -7,6 +7,7 @@
 - [Website](https://www.routeveil.dev/): Project overview.
 - [Documentation](https://www.routeveil.dev/docs): Installation, quick start, API, transitions, options, and reduced-motion behavior.
 - [Interactive laboratory](https://www.routeveil.dev/lab): Built-in page and overlay transition demonstrations.
+- [Shared elements playground](https://www.routeveil.dev/lab/shared-elements): Image transitions between real gallery and detail routes.
 - [GitHub repository](https://github.com/milkevich/routeveil): Source code, issues, and README.
 - [npm package](https://www.npmjs.com/package/routeveil): Published package metadata and versions.
 - [Complete AI-readable reference](https://www.routeveil.dev/llms-full.txt): Expanded product and API summary.
@@ -41,8 +42,9 @@ React Router 5, React Router 8, React Router DOM versions below 6.27.0, and unte
 
 - `RouteveilProvider`: Coordinates transitions and navigation commits.
 - `RouteveilView`: Marks the routed region used by page transitions.
-- `RouteveilLink`: Adds an optional typed transition to React Router links.
-- `useRouteveilNavigate`: Performs transition-aware programmatic navigation.
+- `RouteveilSharedElement`: Marks one real DOM visual for automatic name-based sharing across page-transition routes.
+- `RouteveilLink`: Adds an optional typed transition and shared-element scroll anchor to React Router links.
+- `useRouteveilNavigate`: Performs transition-aware programmatic navigation with the same scroll options.
 - `useRouteveilTransition`: Plays a transition without changing the route.
 
 ## Interrupted navigation
@@ -53,5 +55,22 @@ React Router 5, React Router 8, React Router DOM versions below 6.27.0, and unte
 - Successful and external route changes preserve meaningful application focus or focus the incoming `RouteveilView` with `preventScroll`; playback and failed unchanged navigation restore prior focus when appropriate.
 - Every run cleans up its animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.
 - Routeveil does not currently support cancellation and replacement, request queues, or last-request-wins concurrency.
+
+## Shared elements
+
+- Shared elements are a page-transition capability, not a transition name.
+- Wrap one real HTML or SVG child with `RouteveilSharedElement` and use the same unique `name` on both routes.
+- The lifecycle is strictly sequential: page exit → shared-element movement → page enter.
+- Each settled clone stays over its hidden real target throughout page enter, then hands off and cleans up after enter completes.
+- A clicked `RouteveilLink` selects only shared elements inside it or containing it. An unrelated link starts no shared-element session.
+- Programmatic navigation uses `scrollToSharedElement` as a source hint, then falls back only when the active view has exactly one valid candidate.
+- `sharedElements` accepts `auto`, `all`, an exact name, a readonly name array, or `false` for explicit outgoing selection.
+- Matching uses `name`; source and target tags may differ, with geometry movement and a visual crossfade.
+- Multiple unique matches move concurrently. Missing and duplicate registrations are skipped immediately; only registered but unready targets consume the readiness deadline.
+- On page-transition navigation, `scrollToSharedElement` matches one incoming shared element by exact name, instantly centers it on the Y axis while preserving X, and runs before shared endpoints are measured.
+- A URL hash wins over `scrollToSharedElement`. A valid anchor overrides `preventScrollReset` and `smoothScrollToTop`; a missing, duplicate, or unmeasurable anchor warns and falls back to the existing scroll policy.
+- Overlay transitions, same-page playback, browser-history navigation, and reduced-motion navigation do not run shared movement.
+- Reduced-motion navigation still applies valid `scrollToSharedElement` positioning.
+- Custom children must forward a ref to one DOM element. Video continuity is not guaranteed, and canvas, iframe, WebGL, audio, and pseudo-element fidelity is limited.
 
 The website, documentation, GitHub repository, and npm page above are the canonical public sources for Routeveil.
