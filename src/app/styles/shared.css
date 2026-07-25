@@ -103,6 +103,7 @@
 .code-block__body>div,
 .code-block .shiki {
   background: #000 !important;
+  color: #fff;
 }
 
 .code-block pre {
