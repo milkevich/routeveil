@@ -9,6 +9,7 @@ import {
 import {
   UNSAFE_DataRouterContext,
   UNSAFE_NavigationContext,
+  matchRoutes,
   useLocation,
   useNavigationType,
 } from 'react-router-dom'
@@ -66,6 +67,8 @@ type LifecycleFailureKind =
   | 'location-timeout'
   | 'navigation-timeout'
   | 'overlay-ready-timeout'
+  | 'preload-timeout'
+  | 'readiness-timeout'
 
 type ViewOwnership = {
   element: HTMLElement
@@ -99,6 +102,8 @@ type TransitionRun = {
   sharedScrollFallback: boolean
   sharedTargetDeadline: number | null
   suppressIncomingView: boolean
+  acceptingPendingWork: boolean
+  pendingWork: Set<Promise<void>>
 }
 
 type LocationWaiter = {
@@ -116,11 +121,29 @@ type OverlayReady = {
   resolve: (handle: OverlayAnimationHandle) => void
 }
 
+type LazyRouteLoader = () => Promise<unknown>
+
+function getLazyRouteLoaders(lazy: unknown): LazyRouteLoader[] {
+  if (typeof lazy === 'function') {
+    return [lazy as LazyRouteLoader]
+  }
+
+  if (!lazy || typeof lazy !== 'object') {
+    return []
+  }
+
+  return Object.values(lazy).filter(
+    (value): value is LazyRouteLoader => typeof value === 'function',
+  )
+}
+
 type SharedScrollTargetWaitResult = SharedScrollTargetResolution
 
 const LOCATION_WATCHDOG_MS = 10_000
 const ANIMATION_WATCHDOG_MS = 15_000
 const OVERLAY_READY_WATCHDOG_MS = 2_000
+const PRELOAD_WATCHDOG_MS = 10_000
+const READINESS_WATCHDOG_MS = 10_000
 const SHARED_TARGET_WATCHDOG_MS = 600
 const SHARED_TARGET_POLL_MS = 50
 const SHARED_SCROLL_WATCHDOG_MS = 1_200
@@ -556,6 +579,8 @@ function releaseRunWork(run: TransitionRun): void {
   restoreOwnedViews(run)
   resetOverlay(run)
   run.sharedSession?.cleanup()
+  run.acceptingPendingWork = false
+  run.pendingWork.clear()
 }
 
 function isBlockedFromFocus(element: HTMLElement): boolean {
@@ -765,6 +790,8 @@ function reportTransitionError(
       'location-timeout': 'Routeveil: Navigation did not produce the expected location change. Visual state was safely restored.',
       'navigation-timeout': 'Routeveil: The navigation promise did not settle. Visual state was safely restored.',
       'overlay-ready-timeout': `Routeveil: The “${request.transition}” overlay did not become ready and was safely removed.`,
+      'preload-timeout': 'Routeveil: The destination route did not finish preloading. Navigation continued without a transition.',
+      'readiness-timeout': 'Routeveil: The incoming route did not finish its registered pending work before the readiness timeout. The transition continued.',
     }
 
     warnOnce(
@@ -787,6 +814,24 @@ function reportTransitionError(
   }
 }
 
+function reportPreloadError(
+  request: TransitionRequest,
+  error: unknown,
+): void {
+  const errorIdentity = error instanceof Error
+    ? `${error.name}:${error.message}`
+    : String(error)
+
+  warnOnce(
+    `preload-error:${request.expectedPath}:${errorIdentity}`,
+    'Routeveil: The destination route could not be preloaded. Navigation continued without a transition.',
+  )
+
+  if (isRouteveilDevelopment()) {
+    console.error(error)
+  }
+}
+
 function captureFocusedElement(): HTMLElement | null {
   return getFocusedElement()
 }
@@ -798,6 +843,7 @@ function hasCommitted(run: TransitionRun): boolean {
 export function RouteveilProvider({
   children,
   transitions,
+  preload = false,
 }: RouteveilProviderProps) {
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -819,6 +865,7 @@ export function RouteveilProvider({
   >())
   const sharedRegistrationOrderRef = useRef(0)
   const sharedRegistrationListenersRef = useRef(new Set<() => void>())
+  const lazyRoutePromisesRef = useRef(new WeakMap<object, Promise<void>>())
 
   const resolvedTransitions = useMemo<Record<string, TransitionDefinition>>(
     () => ({
@@ -828,6 +875,49 @@ export function RouteveilProvider({
     [transitions],
   )
 
+  const preloadRoute = useCallback((path: string): Promise<void> => {
+  const router = dataRouterContext?.router
+
+  if (!router) {
+    return Promise.resolve()
+  }
+
+  const matches = matchRoutes(router.routes, path)
+
+  if (!matches) {
+    return Promise.resolve()
+  }
+
+  const promises = matches.flatMap(({ route }) => {
+    const loaders = getLazyRouteLoaders(route.lazy)
+
+    return loaders.map((loader) => {
+      const key = loader as object
+      const cached = lazyRoutePromisesRef.current.get(key)
+
+      if (cached) {
+        return cached
+      }
+
+      const promise = Promise.resolve()
+        .then(() => loader())
+        .then(() => undefined)
+
+      lazyRoutePromisesRef.current.set(key, promise)
+
+      void promise.catch(() => {
+        if (lazyRoutePromisesRef.current.get(key) === promise) {
+          lazyRoutePromisesRef.current.delete(key)
+        }
+      })
+
+      return promise
+    })
+  })
+
+  return Promise.all(promises).then(() => undefined)
+}, [dataRouterContext?.router])
+
   const isRunCurrent = useCallback((run: TransitionRun): boolean => (
     mountedRef.current
     && activeRunRef.current === run
@@ -835,11 +925,104 @@ export function RouteveilProvider({
     && !run.finalized
   ), [])
 
+  const registerPendingWork = useCallback((
+    work: PromiseLike<unknown>,
+  ): (() => void) => {
+    const run = activeRunRef.current
+
+    if (!run || !isRunCurrent(run) || !run.acceptingPendingWork) {
+      return () => undefined
+    }
+
+    let released = false
+    const trackedWork = Promise.resolve(work).then(
+      () => undefined,
+      () => undefined,
+    )
+
+    run.pendingWork.add(trackedWork)
+
+    const release = () => {
+      if (released) {
+        return
+      }
+
+      released = true
+      run.pendingWork.delete(trackedWork)
+    }
+
+    void trackedWork.then(release, release)
+    return release
+  }, [isRunCurrent])
+
   const assertRunCurrent = useCallback((run: TransitionRun): void => {
     if (!isRunCurrent(run)) {
       throw new TransitionCancelledError()
     }
   }, [isRunCurrent])
+
+  const waitForIncomingReadiness = useCallback(async (
+    run: TransitionRun,
+  ): Promise<void> => {
+    if (!run.acceptingPendingWork) {
+      return
+    }
+
+    try {
+      await nextPaint(run.controller.signal)
+      assertRunCurrent(run)
+
+      let quietPasses = 0
+
+      while (quietPasses < 2) {
+        const pendingWork = [...run.pendingWork]
+
+        if (pendingWork.length === 0) {
+          quietPasses += 1
+        } else {
+          quietPasses = 0
+
+          await waitForTask(
+            run,
+            Promise.all(pendingWork).then(() => undefined),
+            READINESS_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'readiness-timeout',
+              'Routeveil incoming route pending work did not settle.',
+            ),
+          )
+          assertRunCurrent(run)
+        }
+
+        if (quietPasses < 2) {
+          await nextPaint(run.controller.signal)
+          assertRunCurrent(run)
+        }
+      }
+
+      await nextPaint(run.controller.signal)
+      assertRunCurrent(run)
+    } catch (error) {
+      if (
+        error instanceof TransitionCancelledError
+        || run.controller.signal.aborted
+      ) {
+        throw error
+      }
+
+      if (error instanceof TransitionLifecycleError) {
+        warnOnce(
+          `readiness-timeout:${run.request.expectedPath}`,
+          'Routeveil: The incoming route did not finish its registered pending work before the readiness timeout. The transition continued.',
+        )
+      } else if (isRouteveilDevelopment()) {
+        console.error(error)
+      }
+    } finally {
+      run.acceptingPendingWork = false
+      run.pendingWork.clear()
+    }
+  }, [assertRunCurrent])
 
   const setRunPhase = useCallback((
     run: TransitionRun,
@@ -1388,6 +1571,7 @@ export function RouteveilProvider({
       : null
     const sharedTargetCutoff = sharedRegistrationOrderRef.current
     run.commitState = 'committing'
+    run.acceptingPendingWork = waitsForLocation
 
     let navigationResult: void | Promise<void>
 
@@ -1395,6 +1579,8 @@ export function RouteveilProvider({
       run.invokingCommit = true
       navigationResult = run.request.commit()
     } catch (error) {
+      run.acceptingPendingWork = false
+      run.pendingWork.clear()
       locationWait?.cancel()
       throw error
     } finally {
@@ -1503,9 +1689,13 @@ export function RouteveilProvider({
         run.sharedScrollFallback || !allowSharedScroll,
       )
     }
+
+    await waitForIncomingReadiness(run)
+    assertRunCurrent(run)
   }, [
     assertRunCurrent,
     prepareLocationWait,
+    waitForIncomingReadiness,
     waitForSharedScrollTarget,
   ])
 
@@ -1547,6 +1737,27 @@ export function RouteveilProvider({
     const definition = resolvedTransitions[request.transition]
 
     try {
+      if (request.preload) {
+        try {
+          await waitForTask(
+            run,
+            request.preload(),
+            PRELOAD_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'preload-timeout',
+              'Routeveil destination preloading did not settle.',
+            ),
+          )
+          assertRunCurrent(run)
+        } catch (error) {
+          reportPreloadError(request, error)
+          setRunPhase(run, 'navigating')
+          await commitOnce(run)
+          assertRunCurrent(run)
+          return
+        }
+      }
+
       if (
         !definition
         || (definition.type !== 'page' && definition.type !== 'overlay')
@@ -1985,7 +2196,7 @@ export function RouteveilProvider({
       if (run.commitState === 'pending' && isRunCurrent(run)) {
         try {
           setRunPhase(run, 'navigating')
-          await commitOnce(run, true, definition.type === 'page')
+          await commitOnce(run, true, definition?.type === 'page')
           assertRunCurrent(run)
         } catch (commitError) {
           if (
@@ -2051,6 +2262,8 @@ export function RouteveilProvider({
       sharedScrollFallback: false,
       sharedTargetDeadline: null,
       suppressIncomingView: false,
+      acceptingPendingWork: false,
+      pendingWork: new Set(),
     }
 
     activeRunRef.current = run
@@ -2077,6 +2290,9 @@ export function RouteveilProvider({
       phase,
       activeOverlay,
       transitionTo,
+      defaultPreload: preload,
+      preloadRoute,
+      registerPendingWork,
       registerView,
       registerOverlayHandle,
       registerSharedElement,
@@ -2084,7 +2300,10 @@ export function RouteveilProvider({
     [
       activeOverlay,
       phase,
+      preload,
+      preloadRoute,
       registerOverlayHandle,
+      registerPendingWork,
       registerSharedElement,
       registerView,
       transitionTo,

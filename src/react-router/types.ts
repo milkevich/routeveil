@@ -60,6 +60,12 @@ export type TransitionOptionsFor<
                             ? DissolveOverlayOptions
                             : unknown
 
+export type RouteveilPreload = false | 'intent' | 'viewport' | 'render'
+
+export type RouteveilPendingWorkRegistrar = (
+  work: PromiseLike<unknown>,
+) => () => void
+
 export type RouteveilPhase =
   | 'idle'
   | 'exiting'
@@ -71,6 +77,7 @@ export type RouteveilPhase =
 export type RouteveilProviderProps = {
   children: ReactNode
   transitions?: Record<string, TransitionDefinition>
+  preload?: RouteveilPreload
 }
 
 export type RouteveilViewProps = {
@@ -99,6 +106,7 @@ export type RouteveilLinkProps<
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
+  preload?: RouteveilPreload
 }
 
 export type RouteveilNavigateOptions<

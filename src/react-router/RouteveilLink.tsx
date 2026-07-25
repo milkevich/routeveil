@@ -1,8 +1,17 @@
-import { forwardRef } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react'
 import type {
+  FocusEvent,
   MouseEvent,
+  PointerEvent,
   ReactElement,
+  Ref,
   RefAttributes,
+  TouchEvent,
 } from 'react'
 import {
   Link,
@@ -20,6 +29,18 @@ import { warnOnce } from './warnings.js'
 
 function isModifiedEvent(event: MouseEvent<HTMLAnchorElement>): boolean {
   return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+}
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (typeof ref === 'function') {
+    ref(value)
+    return
+  }
+
+  if (ref) {
+    const mutableRef = ref as { current: T | null }
+    mutableRef.current = value
+  }
 }
 
 type TransitionDestination = {
@@ -80,7 +101,12 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
   function RouteveilLink({
     transition,
     transitionOptions,
+    preload: preloadOverride,
     onClick,
+    onFocus,
+    onPointerDown,
+    onPointerEnter,
+    onTouchStart,
     target,
     download,
     reloadDocument,
@@ -97,17 +123,117 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
     to,
     ...linkProps
   }, forwardedRef) {
-  const { transitionTo } = useRouteveilContext()
+  const {
+    defaultPreload,
+    preloadRoute,
+    transitionTo,
+  } = useRouteveilContext()
   const navigate = useNavigate()
   const location = useLocation()
   const rootHref = useHref('/')
+  const linkRef = useRef<HTMLAnchorElement | null>(null)
   const destination = getTransitionDestination(to, rootHref)
   const resolvedPath = useResolvedPath(destination.to, { relative })
+  const expectedPath = `${resolvedPath.pathname}${resolvedPath.search}${resolvedPath.hash}`
+  const preload = preloadOverride ?? defaultPreload
 
   const isCurrentLocation =
     resolvedPath.pathname === location.pathname
     && resolvedPath.search === location.search
     && resolvedPath.hash === location.hash
+
+  const canPreload = Boolean(
+    transition
+    && preload !== false
+    && !destination.external
+    && !isCurrentLocation,
+  )
+
+  const setLinkRef = useCallback((element: HTMLAnchorElement | null) => {
+    linkRef.current = element
+    assignRef(forwardedRef, element)
+  }, [forwardedRef])
+
+  const preloadDestination = useCallback((): Promise<void> => {
+    if (!canPreload) {
+      return Promise.resolve()
+    }
+
+    return preloadRoute(expectedPath)
+  }, [canPreload, expectedPath, preloadRoute])
+
+  const startPreload = useCallback(() => {
+    void preloadDestination().catch(() => undefined)
+  }, [preloadDestination])
+
+  useEffect(() => {
+    if (!canPreload) {
+      return
+    }
+
+    if (preload === 'render') {
+      startPreload()
+      return
+    }
+
+    if (preload !== 'viewport') {
+      return
+    }
+
+    const element = linkRef.current
+
+    if (!element) {
+      return
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      startPreload()
+      return
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        startPreload()
+        observer.disconnect()
+      }
+    })
+
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [canPreload, preload, startPreload])
+
+  const handleFocus = (event: FocusEvent<HTMLAnchorElement>) => {
+    onFocus?.(event)
+
+    if (!event.defaultPrevented && preload === 'intent') {
+      startPreload()
+    }
+  }
+
+  const handlePointerDown = (event: PointerEvent<HTMLAnchorElement>) => {
+    onPointerDown?.(event)
+
+    if (!event.defaultPrevented && preload === 'intent') {
+      startPreload()
+    }
+  }
+
+  const handlePointerEnter = (event: PointerEvent<HTMLAnchorElement>) => {
+    onPointerEnter?.(event)
+
+    if (!event.defaultPrevented && preload === 'intent') {
+      startPreload()
+    }
+  }
+
+  const handleTouchStart = (event: TouchEvent<HTMLAnchorElement>) => {
+    onTouchStart?.(event)
+
+    if (!event.defaultPrevented && preload === 'intent') {
+      startPreload()
+    }
+  }
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event)
@@ -137,7 +263,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
 
     void transitionTo({
       to: destination.to,
-      expectedPath: `${resolvedPath.pathname}${resolvedPath.search}${resolvedPath.hash}`,
+      expectedPath,
       transition,
       commit: () => {
         return navigate(destination.to, {
@@ -154,6 +280,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       smoothScrollToTop,
       scrollToSharedElement,
       sharedElements,
+      preload: preload === false ? undefined : preloadDestination,
       clickPosition: event.detail === 0
         ? undefined
         : {
@@ -178,7 +305,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
 
   return (
     <Link
-      ref={forwardedRef}
+      ref={setLinkRef}
       {...linkProps}
       to={to}
       target={target}
@@ -192,6 +319,10 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       defaultShouldRevalidate={defaultShouldRevalidate}
       mask={mask}
       onClick={handleClick}
+      onFocus={handleFocus}
+      onPointerDown={handlePointerDown}
+      onPointerEnter={handlePointerEnter}
+      onTouchStart={handleTouchStart}
     />
   )
   },

@@ -5,6 +5,7 @@ import {
   useNavigate,
 } from 'react-router-dom'
 import { useRouteveilContext } from './RouteveilContext.js'
+import { preloadRoute } from './preload.js'
 import type {
   RouteveilNavigate,
   RouteveilNavigateOptions,
@@ -45,6 +46,7 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         smoothScrollToTop,
         scrollToSharedElement,
         sharedElements,
+        preload,
         ...navigateOptions
       } = options
 
@@ -81,6 +83,9 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         smoothScrollToTop,
         scrollToSharedElement,
         sharedElements,
+        preload: preload
+          ? () => preloadRoute(preload)
+          : undefined,
         navigateOptions: routeveilNavigateOptions,
         sharedElementSource: {
           kind: 'programmatic',

@@ -6,7 +6,9 @@ import type {
   OverlayTransitionDefinition,
 } from '../core/index.js'
 import type {
+  RouteveilPendingWorkRegistrar,
   RouteveilPhase,
+  RouteveilPreload,
   SharedElementsOption,
   TransitionName,
 } from './types.js'
@@ -35,6 +37,7 @@ export type TransitionRequest = {
   clickPosition?: ClickPosition
   waitForLocationChange?: boolean
   sharedElementSource?: SharedElementSource
+  preload?: () => Promise<void>
 }
 
 export type ActiveOverlay = {
@@ -48,6 +51,9 @@ export type RouteveilContextValue = {
   phase: RouteveilPhase
   activeOverlay: ActiveOverlay | null
   transitionTo: (request: TransitionRequest) => Promise<void>
+  defaultPreload: RouteveilPreload
+  preloadRoute: (path: string) => Promise<void>
+  registerPendingWork: RouteveilPendingWorkRegistrar
   registerView: (
     element: HTMLElement | null,
     previousElement: HTMLElement | null,

@@ -3,6 +3,7 @@ export { RouteveilProvider } from './RouteveilProvider.js'
 export { RouteveilSharedElement } from './RouteveilSharedElement.js'
 export { RouteveilView } from './RouteveilView.js'
 export { useRouteveilNavigate } from './useRouteveilNavigate.js'
+export { useRouteveilPendingWork } from './useRouteveilPendingWork.js'
 export { useRouteveilTransition } from './useRouteveilTransition.js'
 export type {
   AnimationPhaseDefinition,
@@ -52,7 +53,9 @@ export type {
   RouteveilNavigateOptions,
   RouteveilPlay,
   RouteveilPlayOptions,
+  RouteveilPendingWorkRegistrar,
   RouteveilPhase,
+  RouteveilPreload,
   RouteveilProviderProps,
   RouteveilSharedElementProps,
   RouteveilViewProps,

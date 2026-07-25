@@ -6,7 +6,7 @@ export default function App() {
   return (
     <>
       <DocumentMetadata />
-      <RouteveilProvider>
+      <RouteveilProvider preload="viewport">
         <SiteLayout>
           <RouteveilView className="route-stage" />
         </SiteLayout>
