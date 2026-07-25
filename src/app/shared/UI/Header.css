@@ -8,6 +8,19 @@
   transition: background-color 60ms ease;
 }
 
+.site-header::before {
+    position: absolute;
+    z-index: -1;
+    top: calc(var(--header-height) * -1);
+    right: 0;
+    left: 0;
+    height: var(--header-height);
+    background-color: var(--background);
+    content: '';
+    pointer-events: none;
+    transform: translateZ(0);
+  }
+
 .header-menu-opened {
   background-color: var(--background);
 }

@@ -377,8 +377,6 @@ type ImageMetadata = {
   height: number
 }
 
-type PageTransition = 'blur' | 'fade'
-
 const imageMetadataCache = new Map<string, ImageMetadata>()
 const imagePreparationCache = new Map<string, Promise<ImageMetadata>>()
 
@@ -482,50 +480,6 @@ function prepareGalleryAssets(): Promise<void> {
   return galleryPreparationPromise
 }
 
-function useMobilePageTransition(): boolean {
-  const [mobile, setMobile] = useState(() => {
-    if (typeof window === 'undefined') {
-      return false
-    }
-
-    return window.matchMedia(
-      '(max-width: 820px), (pointer: coarse)',
-    ).matches
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const query = window.matchMedia(
-      '(max-width: 820px), (pointer: coarse)',
-    )
-
-    const update = () => {
-      setMobile(query.matches)
-    }
-
-    update()
-
-    if (typeof query.addEventListener === 'function') {
-      query.addEventListener('change', update)
-
-      return () => {
-        query.removeEventListener('change', update)
-      }
-    }
-
-    query.addListener(update)
-
-    return () => {
-      query.removeListener(update)
-    }
-  }, [])
-
-  return mobile
-}
-
 function useGalleryReadiness() {
   const initiallyLoadedIds = posts
     .filter((post) => imageMetadataCache.has(post.image))
@@ -622,7 +576,7 @@ function GalleryPost({
     image: HTMLImageElement,
   ) => void
   post: Post
-  transition: PageTransition
+  transition: string
 }) {
   const imageRef = useRef<HTMLImageElement>(null)
 
@@ -696,8 +650,7 @@ function GalleryPost({
 }
 
 function RouteA() {
-  const mobile = useMobilePageTransition()
-  const transition: PageTransition = mobile ? 'fade' : 'blur'
+  const transition = 'blur'
 
   const {
     metadata,
@@ -761,8 +714,7 @@ function RouteA() {
 function RouteB() {
   const location = useLocation()
   const navigate = useRouteveilNavigate()
-  const mobile = useMobilePageTransition()
-  const transition: PageTransition = mobile ? 'fade' : 'blur'
+  const transition = 'blur'
 
   const postId = new URLSearchParams(location.search).get('post')
 

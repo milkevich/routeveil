@@ -8,25 +8,26 @@ import type {
 } from "./types.js";
 
 const EXIT_OPTIONS: KeyframeAnimationOptions = {
-  duration: 240,
-  easing: "cubic-bezier(0.4, 0, 1, 1)",
+  duration: 300,
+  easing: "ease-in",
   fill: "forwards",
 };
 
 const ENTER_OPTIONS: KeyframeAnimationOptions = {
   duration: 420,
-  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+  easing: "ease-out",
   fill: "both",
 };
 
 const DEPTH_EXIT_OPTIONS: KeyframeAnimationOptions = {
-  duration: 420,
-  easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+  easing: "ease-in",
+  duration: 320,
   fill: "forwards",
 };
 
 const DEPTH_ENTER_OPTIONS: KeyframeAnimationOptions = {
   ...DEPTH_EXIT_OPTIONS,
+  easing: "ease-out",
   fill: "both",
 };
 
@@ -98,23 +99,23 @@ function slideTransforms(direction: TransitionDirection): DirectionalTransforms 
   switch (direction) {
     case "down":
       return {
-        exit: "translate3d(0, 96px, 0)",
-        enter: "translate3d(0, -96px, 0)",
+        exit: "translate3d(0, 206px, 0)",
+        enter: "translate3d(0, -206px, 0)",
       };
     case "left":
       return {
-        exit: "translate3d(-96px, 0, 0)",
-        enter: "translate3d(96px, 0, 0)",
+        exit: "translate3d(-206px, 0, 0)",
+        enter: "translate3d(206px, 0, 0)",
       };
     case "right":
       return {
-        exit: "translate3d(96px, 0, 0)",
-        enter: "translate3d(-96px, 0, 0)",
+        exit: "translate3d(206px, 0, 0)",
+        enter: "translate3d(-206px, 0, 0)",
       };
     case "up":
       return {
-        exit: "translate3d(0, -96px, 0)",
-        enter: "translate3d(0, 96px, 0)",
+        exit: "translate3d(0, -206px, 0)",
+        enter: "translate3d(0, 206px, 0)",
       };
   }
 }
@@ -215,13 +216,11 @@ function resolveSpin(transitionOptions?: unknown): PageTransitionPhases {
     ],
     {
       ...EXIT_OPTIONS,
-      duration: 340,
-      easing: "cubic-bezier(0.55, 0.055, 0.675, 0.19)",
+      duration: 280,
     },
     {
       ...ENTER_OPTIONS,
-      duration: 520,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      duration: 320,
     },
   );
 }
@@ -270,12 +269,11 @@ function resolveRotate(transitionOptions?: unknown): PageTransitionPhases {
     ],
     {
       ...EXIT_OPTIONS,
-      duration: 340,
-      easing: "cubic-bezier(0.55, 0.055, 0.675, 0.19)",
+      duration: 280,
     },
     {
       ...ENTER_OPTIONS,
-      duration: 460,
+      duration: 440,
     },
   );
 }
@@ -288,10 +286,10 @@ export const fade = pageTransition(
 export const blur = pageTransition(
   [
     { filter: "blur(0px)", opacity: 1 },
-    { filter: "blur(20px)", opacity: 0 },
+    { filter: "blur(10px)", opacity: 0 },
   ],
   [
-    { filter: "blur(20px)", opacity: 0 },
+    { filter: "blur(10px)", opacity: 0 },
     { filter: "blur(0px)", opacity: 1 },
   ],
 );
