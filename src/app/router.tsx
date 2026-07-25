@@ -25,6 +25,26 @@ export const router = createBrowserRouter([
         }),
       },
       {
+        path: 'lab/shared-elements',
+        lazy: async () => ({
+          Component: (
+            await import(
+              './pages/lab/shared-elements/SharedElementsDemoPage'
+            )
+          ).SharedElementsDemoPage,
+        }),
+      },
+      {
+        path: 'lab/shared-elements/detail',
+        lazy: async () => ({
+          Component: (
+            await import(
+              './pages/lab/shared-elements/SharedElementsDemoPage'
+            )
+          ).SharedElementsDetailPage,
+        }),
+      },
+      {
         path: '*',
         lazy: async () => ({
           Component: (await import('./pages/not-found/NotFoundPage')).NotFoundPage,

@@ -12,6 +12,7 @@ export type ControlledAnimation = {
 
 type BrowserMocksOptions = {
   reducedMotion?: boolean
+  retainFinishedAnimations?: boolean
   settleAnimationOnCancel?: boolean
 }
 
@@ -29,6 +30,7 @@ function restoreProperty(
 
 export function installBrowserMocks({
   reducedMotion = false,
+  retainFinishedAnimations = false,
   settleAnimationOnCancel = false,
 }: BrowserMocksOptions = {}) {
   const animateDescriptor = Object.getOwnPropertyDescriptor(
@@ -63,12 +65,21 @@ export function installBrowserMocks({
     HTMLElement.prototype,
     'inert',
   )
+  const imageCompleteDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLImageElement.prototype,
+    'complete',
+  )
+  const imageNaturalWidthDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLImageElement.prototype,
+    'naturalWidth',
+  )
 
   const animations: ControlledAnimation[] = []
   const activeAnimations = new Set<Animation>()
   const animationsByElement = new WeakMap<Element, Set<Animation>>()
   const inertValues = new WeakMap<HTMLElement, boolean>()
   const frames = new Map<number, FrameRequestCallback>()
+  let animationObserver: ((element: Element) => void) | null = null
   let motionReduced = reducedMotion
   let frameId = 0
   let frameTime = 0
@@ -83,6 +94,7 @@ export function installBrowserMocks({
     keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
     options?: number | KeyframeAnimationOptions,
   ): Animation {
+    animationObserver?.(this)
     let resolveFinished!: () => void
     let rejectFinished!: (error: unknown) => void
     let settled = false
@@ -96,6 +108,8 @@ export function installBrowserMocks({
       if (status === 'running') {
         status = 'cancelled'
         removeAnimation(this, animation)
+      } else if (retainFinishedAnimations && status === 'finished') {
+        removeAnimation(this, animation)
       }
 
       if (settleAnimationOnCancel && !settled) {
@@ -105,6 +119,11 @@ export function installBrowserMocks({
     })
     const animation = {
       cancel,
+      effect: retainFinishedAnimations
+        ? {
+            getKeyframes: () => Array.isArray(keyframes) ? keyframes : [],
+          }
+        : null,
       finished: finishedPromise,
       finish: vi.fn(() => controlled.finish()),
     } as unknown as Animation
@@ -124,7 +143,13 @@ export function installBrowserMocks({
         if (!settled) {
           settled = true
           status = 'finished'
-          removeAnimation(this, animation)
+
+          if (retainFinishedAnimations) {
+            activeAnimations.delete(animation)
+          } else {
+            removeAnimation(this, animation)
+          }
+
           resolveFinished()
         }
       },
@@ -211,6 +236,14 @@ export function installBrowserMocks({
     value: focus,
     writable: true,
   })
+  Object.defineProperty(HTMLImageElement.prototype, 'complete', {
+    configurable: true,
+    get: () => true,
+  })
+  Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', {
+    configurable: true,
+    get: () => 100,
+  })
   if (!inertDescriptor) {
     Object.defineProperty(HTMLElement.prototype, 'inert', {
       configurable: true,
@@ -260,12 +293,25 @@ export function installBrowserMocks({
       )
       restoreProperty(HTMLElement.prototype, 'focus', focusDescriptor)
       restoreProperty(HTMLElement.prototype, 'inert', inertDescriptor)
+      restoreProperty(
+        HTMLImageElement.prototype,
+        'complete',
+        imageCompleteDescriptor,
+      )
+      restoreProperty(
+        HTMLImageElement.prototype,
+        'naturalWidth',
+        imageNaturalWidthDescriptor,
+      )
       restoreProperty(window, 'requestAnimationFrame', rafDescriptor)
       restoreProperty(window, 'cancelAnimationFrame', cancelRafDescriptor)
       restoreProperty(window, 'matchMedia', matchMediaDescriptor)
       restoreProperty(window, 'scrollTo', scrollToDescriptor)
     },
     scrollTo,
+    setAnimationObserver(observer: ((element: Element) => void) | null) {
+      animationObserver = observer
+    },
     setReducedMotion(reduced: boolean) {
       motionReduced = reduced
     },

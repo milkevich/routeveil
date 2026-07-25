@@ -1,5 +1,6 @@
 export { RouteveilLink } from './RouteveilLink.js'
 export { RouteveilProvider } from './RouteveilProvider.js'
+export { RouteveilSharedElement } from './RouteveilSharedElement.js'
 export { RouteveilView } from './RouteveilView.js'
 export { useRouteveilNavigate } from './useRouteveilNavigate.js'
 export { useRouteveilTransition } from './useRouteveilTransition.js'
@@ -53,7 +54,9 @@ export type {
   RouteveilPlayOptions,
   RouteveilPhase,
   RouteveilProviderProps,
+  RouteveilSharedElementProps,
   RouteveilViewProps,
+  SharedElementsOption,
   TransitionOptionsFor,
   TransitionName,
 } from './types.js'

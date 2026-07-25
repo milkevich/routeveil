@@ -16,7 +16,7 @@ export const indexRobots =
   'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
 
 const productDescription =
-  'Routeveil is an open-source React and TypeScript transition engine for React Router with typed page animations and full-screen overlays.'
+  'Routeveil is an open-source React and TypeScript transition engine for React Router with typed page animations, shared elements, and full-screen overlays.'
 
 const docsSectionDescriptions: Record<DocsSectionId, string> = {
   overview:
@@ -39,6 +39,8 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Learn how Routeveil handles concurrent requests, browser history interruptions, focus, and deterministic transition cleanup.',
   'page-transitions':
     'Explore Routeveil page transitions including fade, blur, slide, spin, rotate, bounce, push, and pull.',
+  'shared-elements':
+    'Connect matching visuals across React Router routes with sequential page exit, shared movement, and page enter phases.',
   'overlay-transitions':
     'Explore Routeveil overlays including pixel, wipe, iris, halo, tunnel, clock, mosaic, and dissolve.',
   'transition-options':
@@ -81,6 +83,23 @@ const labMetadata: RouteMetadata = {
   openGraphType: 'website',
 }
 
+const sharedElementsDemoMetadata: RouteMetadata = {
+  title: 'Routeveil Shared Elements Lab - React Router Transitions',
+  description:
+    'Preview shared-element transitions between React Router routes with Routeveil.',
+  canonicalUrl: `${siteOrigin}/lab/shared-elements`,
+  robots: indexRobots,
+  openGraphType: 'website',
+}
+
+const sharedElementsDetailMetadata: RouteMetadata = {
+  ...sharedElementsDemoMetadata,
+  title: 'Routeveil Shared Element Detail - React Router Transitions',
+  description:
+    'Inspect a selected gallery image and reverse its shared-element transition with Routeveil.',
+  canonicalUrl: `${siteOrigin}/lab/shared-elements/detail`,
+}
+
 const notFoundMetadata: RouteMetadata = {
   title: 'Routeveil - Page Not Found',
   description: 'The requested Routeveil page could not be found.',
@@ -120,6 +139,14 @@ export function resolveDocumentMetadata(
 
   if (pathname === '/lab' || pathname === '/lab/') {
     return labMetadata
+  }
+
+  if (pathname === '/lab/shared-elements') {
+    return sharedElementsDemoMetadata
+  }
+
+  if (pathname === '/lab/shared-elements/detail') {
+    return sharedElementsDetailMetadata
   }
 
   return pathname === '/' ? homeMetadata : notFoundMetadata
@@ -173,6 +200,7 @@ function createCommonStructuredData(): StructuredDataNode[] {
         'Per-navigation React Router transitions',
         'Typed transition-specific options',
         'Page and full-screen overlay effects',
+        'Shared-element movement composed with page transitions',
         'Programmatic navigation and transition playback hooks',
         'Deterministic interrupted-navigation cleanup and focus handling',
         'Reduced-motion support',
@@ -254,15 +282,25 @@ export function resolveStructuredData(
       breadcrumb: { '@id': `${siteOrigin}/docs#breadcrumb` },
     })
     routeNodes.push(createBreadcrumb(`${siteOrigin}/docs`, 'Documentation'))
-  } else if (pathname === '/lab' || pathname === '/lab/') {
+  } else if (
+    pathname === '/lab'
+    || pathname === '/lab/'
+    || pathname === '/lab/shared-elements'
+    || pathname === '/lab/shared-elements/detail'
+  ) {
     Object.assign(page, {
       '@type': ['WebPage', 'WebApplication'],
       applicationCategory: 'DeveloperApplication',
       browserRequirements: 'JavaScript and a modern web browser',
       isAccessibleForFree: true,
-      breadcrumb: { '@id': `${siteOrigin}/lab#breadcrumb` },
+      breadcrumb: { '@id': `${metadata.canonicalUrl}#breadcrumb` },
     })
-    routeNodes.push(createBreadcrumb(`${siteOrigin}/lab`, 'Laboratory'))
+    routeNodes.push(createBreadcrumb(
+      metadata.canonicalUrl,
+      pathname === '/lab' || pathname === '/lab/'
+        ? 'Laboratory'
+        : 'Shared Elements Demo',
+    ))
   }
 
   return {

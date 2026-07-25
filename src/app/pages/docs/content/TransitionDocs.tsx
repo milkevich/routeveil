@@ -28,6 +28,43 @@ const overlayExample = `import { RouteveilLink } from 'routeveil/react-router'
   Open Lab
 </RouteveilLink>`
 
+const sharedElementExample = `import {
+  RouteveilLink,
+  RouteveilSharedElement,
+} from 'routeveil/react-router'
+
+function ProjectCard() {
+  return (
+    <RouteveilLink to="/projects/routeveil" transition="slide">
+      <RouteveilSharedElement name="project-cover">
+        <img src="/project.jpg" alt="Project" />
+      </RouteveilSharedElement>
+      Open project
+    </RouteveilLink>
+  )
+}
+
+function ProjectDetail() {
+  return (
+    <RouteveilSharedElement name="project-cover">
+      <img src="/project.jpg" alt="Project" />
+    </RouteveilSharedElement>
+  )
+}`
+
+const multipleSharedElementsExample = `<RouteveilLink
+  to="/projects/routeveil"
+  transition="fade"
+  scrollToSharedElement="routeveil-image"
+>
+  <RouteveilSharedElement name="routeveil-image">
+    <img src="/routeveil.png" alt="Routeveil" />
+  </RouteveilSharedElement>
+  <RouteveilSharedElement name="routeveil-title">
+    <h2>Routeveil</h2>
+  </RouteveilSharedElement>
+</RouteveilLink>`
+
 const typedOptionsExample = `import {
   RouteveilLink,
   type TransitionOptionsFor,
@@ -106,8 +143,113 @@ export function TransitionDocs() {
       </DocSection>
 
       <DocSection
-        id="overlay-transitions"
+        id="shared-elements"
         index="11"
+        intro="Shared elements connect the same conceptual visual across two routes while composing with any Routeveil page transition."
+        title="Shared Elements"
+      >
+        <CodeBlock filename="ProjectRoutes.tsx" language="tsx">{sharedElementExample}</CodeBlock>
+        <p>
+          Wrap the matching real element on both routes with
+          <code> RouteveilSharedElement</code> and give both instances the same unique
+          <code> name</code>. The component clones its single child without adding a
+          layout wrapper. A custom child must forward its ref to one HTML or SVG
+          element.
+        </p>
+        <div className="doc-note">
+          <strong>Sequential lifecycle</strong>
+          <p>
+            <code>page exit → shared-element movement → page enter</code>. Shared
+            elements are a capability layered onto page transitions, not transitions
+            named <code>shared</code> or <code>shared-element</code>. Routeveil completes
+            each phase before starting the next, so they never overlap. The incoming
+            page remains hidden and inert during movement. Each settled clone stays over
+            its hidden real target throughout enter, then hands off after enter completes.
+          </p>
+        </div>
+        <div className="doc-split">
+          <article>
+            <h3>Source discovery</h3>
+            <p>
+              A <code>RouteveilLink</code> selects uniquely named shared elements that
+              are the triggering anchor, inside it, or contain it. An unrelated link
+              starts no shared-element session. Programmatic navigation uses its
+              <code> scrollToSharedElement</code> name as a source hint, then falls back
+              only when the active <code>RouteveilView</code> has one unambiguous source.
+              Use <code>sharedElements</code> to select exact names, opt into
+              route-wide selection with <code>all</code>, or disable sharing. Duplicate
+              names are skipped because they cannot be matched safely.
+            </p>
+          </article>
+          <article>
+            <h3>Matching</h3>
+            <p>
+              Matching uses <code>name</code>, not the HTML tag. Names must be unique
+              within one active route. Same-tag visuals move and morph supported
+              computed styles. Different tags or substantially different visuals move
+              through the same geometry and crossfade before the real target takes
+              over; Routeveil does not replace or semantically morph application DOM
+              nodes.
+            </p>
+          </article>
+        </div>
+        <h3>Multiple elements</h3>
+        <CodeBlock filename="ProjectLink.tsx" language="tsx">{multipleSharedElementsExample}</CodeBlock>
+        <p>
+          One route may register multiple uniquely named shared elements. Routeveil
+          captures every valid element related to the same navigation trigger, moves
+          valid matches concurrently during one middle stage, waits for every movement
+          before starting the page enter, and keeps settled clones mounted until enter
+          finishes. A missing or duplicate target is skipped immediately. A registered
+          target waits only while its image or geometry is not ready, without blocking
+          other matches after the readiness deadline.
+        </p>
+        <h3>Scroll anchor</h3>
+        <p>
+          Set <code>scrollToSharedElement</code> on a page-transition
+          <code> RouteveilLink</code> or programmatic navigation request to match one incoming
+          <code> RouteveilSharedElement</code> by its exact <code>name</code>. Routeveil
+          instantly centers that element on the viewport&apos;s Y axis, preserves the X
+          position, then measures every shared endpoint. A URL hash takes precedence.
+          A valid anchor overrides <code>preventScrollReset</code> and
+          <code> smoothScrollToTop</code>. If the named incoming element is missing,
+          duplicated, or unmeasurable, Routeveil warns and falls back to the existing
+          scroll policy. Reduced motion skips shared movement but still applies a valid
+          anchor position.
+        </p>
+        <h3>Supported behavior</h3>
+        <p>
+          Shared elements activate automatically with page transitions such as
+          <code> fade</code>, <code>blur</code>, <code>slide</code>,
+          <code> spin</code>, <code>rotate</code>, <code>bounce</code>,
+          <code> push</code>, and <code>pull</code>. Overlay transitions and same-page
+          playback ignore shared registrations. Reduced motion skips cloning and
+          movement while navigation continues normally.
+        </p>
+        <p>
+          <RouteveilLink
+            style={{ textDecoration: 'underline' }}
+            to="/lab/shared-elements"
+          >
+            Open the shared elements playground
+          </RouteveilLink>.
+        </p>
+        <div className="doc-note">
+          <strong>Current limitations</strong>
+          <p>
+            Each wrapper accepts one React element child that resolves to one HTML or
+            SVG element, and custom children must forward a ref. Browser history does
+            not independently start shared movement, and video playback continuity is
+            not guaranteed. Canvas, iframe, WebGL, audio, and pseudo-element fidelity
+            is limited. Keep target layout stable when it mounts; overlay transitions
+            do not support shared elements.
+          </p>
+        </div>
+      </DocSection>
+
+      <DocSection
+        id="overlay-transitions"
+        index="12"
         intro="Overlay transitions mount above the complete application, cover the viewport before navigation, and reveal the incoming route only after it renders."
         title="Overlay Transitions"
       >
@@ -165,7 +307,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="transition-options"
-        index="12"
+        index="13"
         intro="For built-ins with configurable options, transitionOptions is selected from the chosen transition name and exposes the fields used by that implementation."
         title="Transition Options"
       >
@@ -214,9 +356,12 @@ export function TransitionDocs() {
               Successful transitioned navigation without a hash scrolls to the top
               instantly by default. Set <code>smoothScrollToTop</code> for smooth
               scrolling. <code>preventScrollReset</code> preserves the current position
-              and takes precedence over smooth scrolling. Hash destinations retain
-              their native target behavior, while playback and cancelled runs do not
-              change scroll position.
+              and takes precedence over smooth scrolling. A valid
+              <code> scrollToSharedElement</code> anchor instead centers the exactly
+              named incoming shared element vertically while preserving horizontal
+              scroll. Hash destinations retain their native target behavior and take
+              precedence over the shared anchor, while playback and cancelled runs do
+              not change scroll position.
             </p>
           </article>
           <article>

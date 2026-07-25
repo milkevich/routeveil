@@ -12,6 +12,7 @@ import {
 import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -52,12 +53,26 @@ function LocationOutput() {
   )
 }
 
+const FixturePage = React.forwardRef<HTMLElement, { name: string }>(
+  function FixturePage({ name }, ref) {
+    return (
+      <main ref={ref}>
+        <h1>{name}</h1>
+        <LocationOutput />
+      </main>
+    )
+  },
+)
+
 function Page({ name }: { name: string }) {
+  const attach = React.useCallback((element: HTMLElement | null) => {
+    element?.setAttribute('data-shared-ref', 'attached')
+  }, [])
+
   return (
-    <main>
-      <h1>{name}</h1>
-      <LocationOutput />
-    </main>
+    <RouteveilSharedElement name="fixture-page">
+      <FixturePage name={name} ref={attach} />
+    </RouteveilSharedElement>
   )
 }
 
@@ -228,10 +243,13 @@ async function waitFor(assertion: () => void): Promise<void> {
 
 function expectClean(container: ParentNode): void {
   const view = findElement<HTMLElement>(container, '[data-routeveil-view]')
+  const page = findElement<HTMLElement>(view, 'main')
 
   expect(view.dataset.routeveilPhase).toBe('idle')
   expect(view.inert).toBe(false)
+  expect(page.dataset.sharedRef).toBe('attached')
   expect(document.querySelector('[data-routeveil-overlay-root]')).toBeNull()
+  expect(document.querySelector('[data-routeveil-shared-portal]')).toBeNull()
 }
 
 describe('packed Routeveil compatibility', () => {
@@ -263,6 +281,18 @@ describe('packed Routeveil compatibility', () => {
       },
     })
 
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 100,
+      height: 80,
+      left: 20,
+      right: 180,
+      top: 20,
+      width: 160,
+      x: 20,
+      y: 20,
+      toJSON: () => ({}),
+    } as DOMRect)
+
     vi.stubGlobal(
       'requestAnimationFrame',
       (callback: FrameRequestCallback) => window.setTimeout(
@@ -277,6 +307,7 @@ describe('packed Routeveil compatibility', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     document.body.replaceChildren()
   })
@@ -351,6 +382,7 @@ describe('packed Routeveil compatibility', () => {
     })
 
     expect(window.history.length).toBe(historyLength)
+    expect(animationCalls).toBeGreaterThan(2)
     await app.unmount()
   })
 

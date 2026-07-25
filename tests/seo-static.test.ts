@@ -32,6 +32,11 @@ describe('static SEO and crawler assets', () => {
     ['/', 'https://www.routeveil.dev/', 'WebPage'],
     ['/docs', 'https://www.routeveil.dev/docs', 'TechArticle'],
     ['/lab', 'https://www.routeveil.dev/lab', 'WebApplication'],
+    [
+      '/lab/shared-elements',
+      'https://www.routeveil.dev/lab/shared-elements',
+      'WebApplication',
+    ],
   ])(
     'provides canonical metadata and connected structured data for %s',
     (pathname, canonicalUrl, routeType) => {
@@ -94,9 +99,11 @@ describe('static SEO and crawler assets', () => {
       'https://www.routeveil.dev/',
       'https://www.routeveil.dev/docs',
       'https://www.routeveil.dev/lab',
+      'https://www.routeveil.dev/lab/shared-elements',
     ])
     expect(new Set(locations).size).toBe(locations.length)
     expect(locations.every((location) => !location?.includes('#'))).toBe(true)
+    expect(locations.every((location) => !location?.includes('?'))).toBe(true)
   })
 
   it('publishes concise and expanded AI-readable references', () => {
@@ -109,6 +116,7 @@ describe('static SEO and crawler assets', () => {
       expect(content).toContain('https://www.routeveil.dev/docs')
       expect(content).toContain('Interrupted navigation')
       expect(content).toContain('active promise')
+      expect(content).toContain('Shared elements')
       expect(content).toContain(repositoryUrl)
       expect(content).toContain(npmPackageUrl)
       expect(content).not.toContain('<html')
@@ -131,10 +139,13 @@ describe('static SEO and crawler assets', () => {
     expect(router).toContain("path: '*'")
     expect(generator).toContain("file: 'docs.html'")
     expect(generator).toContain("file: 'lab.html'")
+    expect(generator).toContain("file: 'lab/shared-elements.html'")
+    expect(generator).toContain("file: 'lab/shared-elements/detail.html'")
     expect(generator).toContain("file: '404.html'")
     expect(generator).toContain("from '../src/app/pages/docs/docsSections'")
     expect(generator).toContain('id="compatibility"')
     expect(generator).toContain('id="interrupted-navigation"')
+    expect(generator).toContain('id="shared-elements"')
     expect(generator).toContain('root.replaceChildren()')
     expect(packageJson.scripts['build:demo']).toBe(
       'vite build && node --import tsx scripts/generate-seo-pages.ts',

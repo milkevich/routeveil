@@ -9,6 +9,7 @@ Canonical public sources:
 - Website: https://www.routeveil.dev/
 - Documentation: https://www.routeveil.dev/docs
 - Interactive laboratory: https://www.routeveil.dev/lab
+- Shared elements playground: https://www.routeveil.dev/lab/shared-elements
 - Source repository: https://github.com/milkevich/routeveil
 - npm package: https://www.npmjs.com/package/routeveil
 
@@ -28,6 +29,7 @@ Routeveil supports React `^18.0.0 || ^19.0.0`, React DOM `^18.0.0 || ^19.0.0`, a
 import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -54,7 +56,7 @@ React Router's `viewTransition` option is available throughout the supported Rou
 
 ## Transition lifecycle
 
-For a page transition, Routeveil animates the registered route view out, commits React Router navigation, waits for the new location to render and paint, animates the view in, and restores idle state.
+For a page transition, Routeveil animates the registered route view out, commits React Router navigation, waits for the new location to render and paint, animates the view in, and restores idle state. When valid shared elements are selected, a dedicated shared movement runs after the complete page exit and before the page enter. These phases never overlap.
 
 For an overlay transition, Routeveil covers the viewport, commits navigation only after the cover is opaque, waits for the new location, reveals the incoming route, and removes the overlay.
 
@@ -82,17 +84,41 @@ Completed, failed, interrupted, and unmounted runs clean up their animations, in
 
 `RouteveilView` registers the routed content animated by page transitions. Persistent interface such as a header can remain outside this wrapper. With data routers, an empty `RouteveilView` renders React Router's `Outlet`; with declarative routes it can wrap explicit children.
 
+### RouteveilSharedElement
+
+`RouteveilSharedElement` accepts only `name` and one React element child. It clones that child with an internal merged ref and does not add a layout wrapper. Intrinsic HTML and SVG children are supported. A custom component must forward its ref to one real DOM element. Names are trimmed, matched across routes by identity rather than tag, and must be unique within one active route view.
+
 ### RouteveilLink
 
-`RouteveilLink` extends React Router's link behavior with optional `transition`, `transitionOptions`, and `smoothScrollToTop` properties. It preserves native behavior for modified clicks, external links, downloads, non-self targets, reload-document links, and prevented events.
+`RouteveilLink` extends React Router's link behavior with optional `transition`, `transitionOptions`, `smoothScrollToTop`, `scrollToSharedElement`, and `sharedElements` properties. It preserves native behavior for modified clicks, external links, downloads, non-self targets, reload-document links, and prevented events.
 
 ### useRouteveilNavigate
 
-`useRouteveilNavigate` performs programmatic transition-aware navigation. It accepts React Router navigation options plus Routeveil transition options. A transitioned request resolves after the complete visual lifecycle and cleanup.
+`useRouteveilNavigate` performs programmatic transition-aware navigation. It accepts React Router navigation options plus Routeveil transition, scroll, and shared-element selection options. A transitioned request resolves after the complete visual lifecycle and cleanup.
 
 ### useRouteveilTransition
 
 `useRouteveilTransition` plays a real transition on the current route without changing the URL, history, route state, or scroll position.
+
+## Shared elements
+
+Shared elements compose with the existing page transition selected by `RouteveilLink` or `useRouteveilNavigate`; `shared` and `shared-element` are not transition names. Routeveil performs three distinct sequential phases:
+
+1. complete the normal page exit
+2. move every valid shared visual concurrently
+3. complete the normal page enter
+
+The outgoing visual is captured in a fixed, non-interactive, aria-hidden body portal before the real source is hidden. The clone remains stationary above the outgoing page until exit completes. After Routeveil commits navigation and applies its existing scroll policy, it keeps the incoming view hidden, finds new registrations with matching names, measures their viewport geometry, and moves each wrapper to its target. When movement finishes, Routeveil reveals the incoming view and begins its enter phase beneath the settled clone while keeping the real target hidden. After enter completes, the real target takes over and the portal is removed.
+
+For page-transition navigation, `scrollToSharedElement` can be supplied to `RouteveilLink` or `useRouteveilNavigate` with the exact name of an incoming `RouteveilSharedElement`. After the incoming route mounts and before Routeveil measures any shared endpoint, it instantly centers the named element on the viewport's Y axis while preserving the current X position. A URL hash takes precedence. A valid shared-element anchor overrides `preventScrollReset` and `smoothScrollToTop`. If the incoming name is missing, duplicated, or unmeasurable, Routeveil emits a warning and falls back to the request's existing scroll policy. Reduced motion skips shared cloning and movement but still applies valid anchor positioning.
+
+A clicked `RouteveilLink` selects registered elements that are the triggering anchor, inside that anchor, or contain that anchor. An unrelated link starts no shared-element session, so ordinary route navigation never waits for an incoming match. Programmatic navigation uses `scrollToSharedElement` as an exact outgoing source hint, then falls back only when the active view has one valid shared element. The `sharedElements` option accepts `auto`, `all`, an exact name, a readonly name array, or `false` for explicit control.
+
+Same names may connect different tags such as `img` to `video` or `span` to `div`. Same-tag visuals move and morph supported computed styles. Different tags use geometry movement plus a source-to-target visual crossfade; Routeveil does not morph semantic DOM nodes or move the real outgoing node into the incoming route. Multiple unique names move together. A missing or duplicate registration is skipped immediately. A registered target waits only while its image or geometry remains unready, up to the target-readiness deadline.
+
+Overlay transitions and same-page playback ignore shared registrations. Reduced motion performs normal navigation without shared clones or movement. Browser Back and Forward do not independently start sharing, but an external history change during an active shared run cancels its visual work, reveals connected targets and the incoming view, removes the portal, and leaves the latest location in control.
+
+Current limitations require one DOM element per `RouteveilSharedElement`, ref-forwarding custom children, unique names, and stable mounted target layout. Temporary video clones are muted and do not preserve playback continuity. Canvas, iframe, WebGL, audio, and pseudo-element fidelity is limited. Shared elements do not run with overlay transitions.
 
 ## Built-in page transitions
 
@@ -138,6 +164,8 @@ Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is
 - Programmatic Navigation: https://www.routeveil.dev/docs#programmatic-navigation
 - Interrupted Navigation: https://www.routeveil.dev/docs#interrupted-navigation
 - Page Transitions: https://www.routeveil.dev/docs#page-transitions
+- Shared Elements: https://www.routeveil.dev/docs#shared-elements
+- Shared Elements Playground: https://www.routeveil.dev/lab/shared-elements
 - Overlay Transitions: https://www.routeveil.dev/docs#overlay-transitions
 - Transition Options: https://www.routeveil.dev/docs#transition-options
 - Reduced Motion: https://www.routeveil.dev/docs#reduced-motion

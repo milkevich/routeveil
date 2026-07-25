@@ -1,4 +1,8 @@
-import { StrictMode } from 'react'
+import {
+  StrictMode,
+  forwardRef,
+  useCallback,
+} from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   BrowserRouter,
@@ -10,6 +14,7 @@ import {
 import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
   useRouteveilTransition,
@@ -65,8 +70,22 @@ export function Controls() {
   )
 }
 
+const FixturePage = forwardRef<HTMLElement, { name: string }>(
+  function FixturePage({ name }, ref) {
+    return <main ref={ref}>{name}</main>
+  },
+)
+
 export function Page({ name }: { name: string }) {
-  return <main>{name}</main>
+  const attach = useCallback((element: HTMLElement | null) => {
+    element?.setAttribute('data-shared-ref', 'attached')
+  }, [])
+
+  return (
+    <RouteveilSharedElement name="fixture-page">
+      <FixturePage name={name} ref={attach} />
+    </RouteveilSharedElement>
+  )
 }
 
 export function DeclarativeApp() {

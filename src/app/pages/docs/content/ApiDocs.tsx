@@ -157,7 +157,9 @@ export function ApiDocs() {
             { name: 'transition', type: 'TransitionName', defaultValue: 'undefined', description: 'Built-in or custom transition selected for this navigation.' },
             { name: 'transitionOptions', type: 'TransitionOptionsFor<T>', defaultValue: 'undefined', description: 'Options inferred from a literal built-in transition name.' },
             { name: 'smoothScrollToTop', type: 'boolean', defaultValue: 'false', description: 'Uses smooth scrolling after a successful transitioned navigation instead of the default instant reset.' },
-            { name: 'preventScrollReset', type: 'boolean', defaultValue: 'false', description: 'Inherited from React Router. When true, it prevents Routeveil scrolling and takes precedence over smoothScrollToTop.' },
+            { name: 'scrollToSharedElement', type: 'string', defaultValue: 'undefined', description: 'Centers the exactly named incoming shared element on the Y axis before shared endpoints are measured.' },
+            { name: 'sharedElements', type: "'auto' | 'all' | string | readonly string[] | false", defaultValue: "'auto'", description: 'Controls outgoing shared-element selection. Auto scopes links to their trigger and programmatic requests to a scroll hint or sole source.' },
+            { name: 'preventScrollReset', type: 'boolean', defaultValue: 'false', description: 'Inherited from React Router. Preserves scroll unless a valid scrollToSharedElement anchor is supplied.' },
           ]}
         />
         <h3>Page transition</h3>
@@ -228,7 +230,8 @@ export function ApiDocs() {
           The hook accepts React Router navigation options such as <code>replace</code>,
           <code> state</code>, <code>relative</code>, and
           <code> preventScrollReset</code>, plus <code>transition</code>,
-          <code> transitionOptions</code>, and <code>smoothScrollToTop</code>. For a
+          <code> transitionOptions</code>, <code>smoothScrollToTop</code>,
+          <code> scrollToSharedElement</code>, and <code>sharedElements</code>. For a
           transitioned request, the returned promise resolves after exit and enter or
           cover and reveal have finished and cleanup has restored idle state.
         </p>

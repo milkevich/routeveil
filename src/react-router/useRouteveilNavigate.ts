@@ -11,6 +11,27 @@ import type {
 } from './types.js'
 import { warnOnce } from './warnings.js'
 
+function getActiveElement(): Element | null {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  const element = document.activeElement
+  const view = document.defaultView
+
+  if (
+    !element
+    || !view
+    || !(element instanceof view.Element)
+    || element === document.body
+    || element === document.documentElement
+  ) {
+    return null
+  }
+
+  return element
+}
+
 export function useRouteveilNavigate(): RouteveilNavigate {
   const navigate = useNavigate()
   const location = useLocation()
@@ -22,6 +43,8 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         transition,
         transitionOptions,
         smoothScrollToTop,
+        scrollToSharedElement,
+        sharedElements,
         ...navigateOptions
       } = options
 
@@ -56,7 +79,13 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         },
         transitionOptions,
         smoothScrollToTop,
+        scrollToSharedElement,
+        sharedElements,
         navigateOptions: routeveilNavigateOptions,
+        sharedElementSource: {
+          kind: 'programmatic',
+          trigger: getActiveElement(),
+        },
       })
     },
     [location.hash, location.pathname, location.search, navigate, transitionTo],
