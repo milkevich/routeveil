@@ -31,6 +31,8 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Configure RouteveilProvider defaults, custom transitions, reduced motion, and navigation behavior.',
   'routeveil-link':
     'Use RouteveilLink to choose transitions and typed options for individual React Router navigations.',
+  'route-preloading':
+    'Preload matching React Router lazy route modules before transitioned navigation begins.',
   'routeveil-view':
     'Use RouteveilView to define the routed content animated by Routeveil while persistent interface stays mounted.',
   'programmatic-navigation':

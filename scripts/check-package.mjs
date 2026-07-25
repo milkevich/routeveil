@@ -21,6 +21,7 @@ const expectedExports = [
   'RouteveilSharedElement',
   'RouteveilView',
   'useRouteveilNavigate',
+  'useRouteveilPendingWork',
   'useRouteveilTransition',
 ]
 const expectedFiles = [
@@ -106,6 +107,7 @@ assert.ok(publicApi.RouteveilSharedElement)
 assert.ok(publicApi.RouteveilView)
 assert.equal(typeof publicApi.RouteveilProvider, 'function')
 assert.equal(typeof publicApi.useRouteveilNavigate, 'function')
+assert.equal(typeof publicApi.useRouteveilPendingWork, 'function')
 assert.equal(typeof publicApi.useRouteveilTransition, 'function')
 
 const serverMarkup = renderToString(
