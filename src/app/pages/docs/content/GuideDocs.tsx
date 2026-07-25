@@ -12,7 +12,7 @@ export function GuideDocs() {
   return (
     <DocSection
       id="reduced-motion"
-      index="14"
+      index="15"
       intro="Routeveil reads the user's motion preference before each transition request and keeps navigation functional when reduced motion is enabled."
       title="Reduced Motion"
     >

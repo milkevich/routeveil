@@ -87,7 +87,7 @@ export function TransitionDocs() {
     <>
       <DocSection
         id="page-transitions"
-        index="10"
+        index="11"
         intro="Page transitions animate the registered RouteveilView while persistent interface outside it remains mounted."
         title="Page Transitions"
       >
@@ -144,7 +144,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="shared-elements"
-        index="11"
+        index="12"
         intro="Shared elements connect the same conceptual visual across two routes while composing with any Routeveil page transition."
         title="Shared Elements"
       >
@@ -249,7 +249,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="overlay-transitions"
-        index="12"
+        index="13"
         intro="Overlay transitions mount above the complete application, cover the viewport before navigation, and reveal the incoming route only after it renders."
         title="Overlay Transitions"
       >
@@ -307,7 +307,7 @@ export function TransitionDocs() {
 
       <DocSection
         id="transition-options"
-        index="13"
+        index="14"
         intro="For built-ins with configurable options, transitionOptions is selected from the chosen transition name and exposes the fields used by that implementation."
         title="Transition Options"
       >

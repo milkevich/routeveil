@@ -5,6 +5,7 @@ export const docsSections = [
   { id: 'quick-start', label: 'Quick Start' },
   { id: 'provider', label: 'Provider' },
   { id: 'routeveil-link', label: 'RouteveilLink' },
+  { id: 'route-preloading', label: 'Route Preloading' },
   { id: 'routeveil-view', label: 'RouteveilView' },
   { id: 'programmatic-navigation', label: 'Programmatic Navigation' },
   { id: 'interrupted-navigation', label: 'Interrupted Navigation' },

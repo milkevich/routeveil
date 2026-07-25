@@ -55,6 +55,42 @@ const overlayLinkExample = `import { RouteveilLink } from 'routeveil/react-route
   Open Lab
 </RouteveilLink>`
 
+const preloadProviderExample = `<RouteveilProvider preload="viewport">
+  <Header />
+  <RouteveilView />
+</RouteveilProvider>`
+
+const preloadLinkExample = `<RouteveilLink
+  to="/docs"
+  transition="dissolve"
+>
+  Documentation
+</RouteveilLink>
+
+<RouteveilLink
+  to="/dashboard"
+  transition="fade"
+  preload="intent"
+>
+  Dashboard
+</RouteveilLink>
+
+<RouteveilLink
+  to="/editor"
+  transition="slide"
+  preload="render"
+>
+  Editor
+</RouteveilLink>
+
+<RouteveilLink
+  to="/account"
+  transition="fade"
+  preload={false}
+>
+  Account
+</RouteveilLink>`
+
 const explicitViewExample = `<RouteveilView className="route-stage">
   <Routes>
     <Route path="/" element={<Home />} />
@@ -123,6 +159,7 @@ export function ApiDocs() {
           rows={[
             { name: 'children', type: 'ReactNode', defaultValue: 'required', description: 'The application subtree that can use Routeveil components and hooks.' },
             { name: 'transitions', type: 'Record<string, TransitionDefinition>', defaultValue: 'undefined', description: 'Custom page or overlay definitions merged over the built-in registry.' },
+            { name: 'preload', type: 'RouteveilPreload', defaultValue: 'false', description: 'Default preload behavior inherited by transitioned RouteveilLink destinations.' },
           ]}
         />
         <p>
@@ -156,6 +193,7 @@ export function ApiDocs() {
           rows={[
             { name: 'transition', type: 'TransitionName', defaultValue: 'undefined', description: 'Built-in or custom transition selected for this navigation.' },
             { name: 'transitionOptions', type: 'TransitionOptionsFor<T>', defaultValue: 'undefined', description: 'Options inferred from a literal built-in transition name.' },
+            { name: 'preload', type: 'RouteveilPreload', defaultValue: 'provider value', description: 'Overrides the provider preload behavior for this transitioned link.' },
             { name: 'smoothScrollToTop', type: 'boolean', defaultValue: 'false', description: 'Uses smooth scrolling after a successful transitioned navigation instead of the default instant reset.' },
             { name: 'scrollToSharedElement', type: 'string', defaultValue: 'undefined', description: 'Centers the exactly named incoming shared element on the Y axis before shared endpoints are measured.' },
             { name: 'sharedElements', type: "'auto' | 'all' | string | readonly string[] | false", defaultValue: "'auto'", description: 'Controls outgoing shared-element selection. Auto scopes links to their trigger and programmatic requests to a scroll hint or sole source.' },
@@ -186,8 +224,85 @@ export function ApiDocs() {
       </DocSection>
 
       <DocSection
-        id="routeveil-view"
+        id="route-preloading"
         index="07"
+        intro="Routeveil can prepare matching lazy route modules before a transitioned link starts its exit or cover phase."
+        title="Route Preloading"
+      >
+        <p>
+          Set <code>preload</code> on <code>RouteveilProvider</code> to choose one
+          default for transitioned links in its subtree. The default is
+          <code> false</code>, so preloading remains opt-in.
+        </p>
+        <CodeBlock filename="App.tsx" language="tsx">{preloadProviderExample}</CodeBlock>
+        <div className="option-groups">
+          <article>
+            <h3>Intent</h3>
+            <p>
+              <code>intent</code> starts when the link receives focus, pointer intent,
+              a pointer press, or a touch start. It avoids loading destinations that the
+              user never approaches.
+            </p>
+          </article>
+          <article>
+            <h3>Viewport</h3>
+            <p>
+              <code>viewport</code> starts when the link enters the viewport. This is
+              useful for primary navigation and mobile links that should already be
+              prepared before the first tap.
+            </p>
+          </article>
+          <article>
+            <h3>Render</h3>
+            <p>
+              <code>render</code> starts as soon as the link mounts, including links
+              outside the current viewport. Use it for high-priority destinations that
+              should begin loading immediately.
+            </p>
+          </article>
+          <article>
+            <h3>Disabled</h3>
+            <p>
+              <code>false</code> disables preloading. A link-level value overrides the
+              provider default, so individual destinations can use a different strategy
+              or opt out.
+            </p>
+          </article>
+        </div>
+        <CodeBlock filename="Navigation.tsx" language="tsx">{preloadLinkExample}</CodeBlock>
+        <p>
+          Routeveil preloads only eligible internal <code>RouteveilLink</code> instances
+          that also select a transition. External destinations, same-location links, and
+          ordinary links without a transition keep their normal React Router behavior.
+          When navigation begins, Routeveil reuses and awaits any unfinished preload
+          before starting the visual transition.
+        </p>
+        <div className="doc-note">
+          <strong>Data Router route tree</strong>
+          <p>
+            Automatic route discovery requires a React Router Data Router such as
+            <code> createBrowserRouter</code>. Routeveil matches the destination against
+            that router&apos;s route tree and runs the matching <code>route.lazy</code>
+            functions. A declarative <code>BrowserRouter</code> with
+            <code> Routes</code> does not expose a route tree for automatic lazy-route
+            preloading, so these modes become a no-op there.
+          </p>
+        </div>
+        <div className="doc-note">
+          <strong>Module preparation, not destination rendering</strong>
+          <p>
+            Preloading downloads and evaluates matching lazy route modules and caches
+            the resulting promises. It does not render the destination, run component
+            effects, or execute route data loaders. If preloading rejects or exceeds
+            its safety timeout, Routeveil continues navigation without the requested
+            animation instead of leaving the current page trapped in a transition.
+          </p>
+        </div>
+      </DocSection>
+
+      <DocSection
+        id="routeveil-view"
+        index="08"
         intro="RouteveilView registers the persistent wrapper animated by page transitions while leaving surrounding interface mounted."
         title="RouteveilView"
       >
@@ -221,7 +336,7 @@ export function ApiDocs() {
 
       <DocSection
         id="programmatic-navigation"
-        index="08"
+        index="09"
         intro="useRouteveilNavigate provides transition-aware navigation for buttons, flows, and application logic."
         title="Programmatic Navigation"
       >
@@ -253,7 +368,7 @@ export function ApiDocs() {
 
       <DocSection
         id="interrupted-navigation"
-        index="09"
+        index="10"
         intro="Routeveil runs one transition at a time, distinguishes additional Routeveil requests from external location changes, and always settles visual work before returning to idle."
         title="Interrupted Navigation"
       >
