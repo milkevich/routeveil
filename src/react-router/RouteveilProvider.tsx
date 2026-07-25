@@ -1651,6 +1651,17 @@ export function RouteveilProvider({
           }
         }
 
+        if (sharedSession) {
+          const activated = await sharedSession.activate(
+            run.controller.signal,
+          )
+          assertRunCurrent(run)
+
+          if (!activated) {
+            cleanupSharedSession()
+          }
+        }
+
         claimView(run, pageView)
         setRunPhase(run, 'exiting')
 
@@ -1813,36 +1824,48 @@ export function RouteveilProvider({
           let keepSharedSessionThroughEnter = false
 
           if (preparation.matchedNames.length > 0) {
-            try {
-              keepSharedSessionThroughEnter = await waitForTask(
-                run,
-                sharedSession.animate(
-                  run.controller.signal,
-                  (animation) => {
-                    run.animations.add(animation)
-                    sharedAnimations.add(animation)
-                  },
-                ),
-                ANIMATION_WATCHDOG_MS,
-                new TransitionLifecycleError(
-                  'animation-timeout',
-                  'Routeveil shared-element movement did not settle.',
-                ),
-                () => sharedSession?.cleanup(),
-              )
-              assertRunCurrent(run)
-            } catch (error) {
-              if (
-                error instanceof TransitionCancelledError
-                || run.controller.signal.aborted
-              ) {
-                throw error
-              }
+            const movementReady = await sharedSession.prepareMovement(
+              run.controller.signal,
+            )
+            assertRunCurrent(run)
 
+            if (!movementReady) {
               warnOnce(
-                'shared-element-movement-failed',
-                'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
+                'shared-element-paint-readiness-failed',
+                'Routeveil: Shared-element media did not become paint-ready. The incoming page was safely restored and continued its normal enter transition.',
               )
+            } else {
+              try {
+                keepSharedSessionThroughEnter = await waitForTask(
+                  run,
+                  sharedSession.animate(
+                    run.controller.signal,
+                    (animation) => {
+                      run.animations.add(animation)
+                      sharedAnimations.add(animation)
+                    },
+                  ),
+                  ANIMATION_WATCHDOG_MS,
+                  new TransitionLifecycleError(
+                    'animation-timeout',
+                    'Routeveil shared-element movement did not settle.',
+                  ),
+                  () => sharedSession?.cleanup(),
+                )
+                assertRunCurrent(run)
+              } catch (error) {
+                if (
+                  error instanceof TransitionCancelledError
+                  || run.controller.signal.aborted
+                ) {
+                  throw error
+                }
+
+                warnOnce(
+                  'shared-element-movement-failed',
+                  'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
+                )
+              }
             }
           }
 

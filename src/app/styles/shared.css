@@ -12,6 +12,7 @@
 .code-block {
   overflow: hidden;
   border-radius: 20px;
+  background-color: #000;
 }
 
 @supports (corner-shape: squircle) {

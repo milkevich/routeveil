@@ -185,7 +185,7 @@ type SourceEntry = {
   wrapper: HTMLElement
   sourceClone: Element
   cloneExclusions: CloneExclusionRecord[]
-  sourceVisibility: StyleOwnership
+  sourceOpacity: StyleOwnership | null
   target: TargetEntry | null
 }
 
@@ -197,7 +197,7 @@ type TargetEntry = {
   frameStyle: FrameStyle
   styleMorphs: StyleMorphEntry[]
   visualOpacity: number
-  visibility: StyleOwnership
+  opacity: StyleOwnership
   clone: Element | null
 }
 
@@ -223,6 +223,7 @@ export type SharedScrollTargetResolution =
 
 const SHARED_DURATION_MS = 480
 const SHARED_HANDOFF_DURATION_MS = 64
+const SHARED_MEDIA_READY_TIMEOUT_MS = 1_200
 const SHARED_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const ROOT_FRAME_COMPARISON_PROPERTIES = new Set<string>([
   ...FRAME_STYLE_PROPERTIES.map(([, property]) => property),
@@ -1337,27 +1338,7 @@ function prepareVisualRoot(
   )
 }
 
-function ownVisibility(
-  element: HTMLElement | SVGElement,
-): StyleOwnership {
-  const ownership: StyleOwnership = {
-    style: element.style,
-    property: 'visibility',
-    originalValue: element.style.getPropertyValue('visibility'),
-    originalPriority: element.style.getPropertyPriority('visibility'),
-    ownedValue: 'hidden',
-    ownedPriority: 'important',
-  }
-
-  ownership.style.setProperty(
-    ownership.property,
-    ownership.ownedValue,
-    ownership.ownedPriority,
-  )
-  return ownership
-}
-
-function ownOpacity(element: HTMLElement): StyleOwnership {
+function ownOpacity(element: HTMLElement | SVGElement): StyleOwnership {
   const ownership: StyleOwnership = {
     style: element.style,
     property: 'opacity',
@@ -1458,6 +1439,201 @@ function hasReadyImages(element: Element): boolean {
     const source = image.currentSrc || image.src || image.getAttribute('src')
     return !source || (image.complete && image.naturalWidth > 0)
   })
+}
+
+function getElementImages(element: Element): HTMLImageElement[] {
+  return element.tagName.toLowerCase() === 'img'
+    ? [element as HTMLImageElement]
+    : [...element.querySelectorAll<HTMLImageElement>('img')]
+}
+
+function waitForSharedFrame(
+  document: Document,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const view = document.defaultView
+
+  if (!view || signal.aborted) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    let frame = 0
+    let timer = 0
+
+    const finish = (result: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+
+      if (frame && typeof view.cancelAnimationFrame === 'function') {
+        view.cancelAnimationFrame(frame)
+      }
+
+      if (timer) {
+        view.clearTimeout(timer)
+      }
+
+      signal.removeEventListener('abort', abort)
+      resolve(result)
+    }
+    const abort = () => finish(false)
+
+    signal.addEventListener('abort', abort, { once: true })
+
+    if (typeof view.requestAnimationFrame === 'function') {
+      frame = view.requestAnimationFrame(() => finish(true))
+    } else {
+      timer = view.setTimeout(() => finish(true), 0)
+    }
+  })
+}
+
+async function waitForSharedPaint(
+  document: Document,
+  signal: AbortSignal,
+  frames = 2,
+): Promise<boolean> {
+  for (let frame = 0; frame < frames; frame += 1) {
+    if (!await waitForSharedFrame(document, signal)) {
+      return false
+    }
+  }
+
+  return !signal.aborted
+}
+
+function waitForImageLoad(
+  image: HTMLImageElement,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const source = image.currentSrc || image.src || image.getAttribute('src')
+
+  if (!source) {
+    return Promise.resolve(true)
+  }
+
+  if (image.complete) {
+    return Promise.resolve(image.naturalWidth > 0)
+  }
+
+  const view = image.ownerDocument.defaultView
+
+  if (!view || signal.aborted) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+
+    const cleanup = () => {
+      view.clearTimeout(timer)
+      image.removeEventListener('load', load)
+      image.removeEventListener('error', error)
+      signal.removeEventListener('abort', abort)
+    }
+    const finish = (result: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+    const load = () => finish(image.naturalWidth > 0)
+    const error = () => finish(false)
+    const abort = () => finish(false)
+
+    image.addEventListener('load', load, { once: true })
+    image.addEventListener('error', error, { once: true })
+    signal.addEventListener('abort', abort, { once: true })
+    timer = view.setTimeout(
+      () => finish(image.complete && image.naturalWidth > 0),
+      SHARED_MEDIA_READY_TIMEOUT_MS,
+    )
+  })
+}
+
+function waitForImageDecode(
+  image: HTMLImageElement,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (
+    signal.aborted
+    || typeof image.decode !== 'function'
+  ) {
+    return Promise.resolve(!signal.aborted)
+  }
+
+  const view = image.ownerDocument.defaultView
+
+  if (!view) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+
+    const cleanup = () => {
+      view.clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+    }
+    const finish = (result: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+    const abort = () => finish(false)
+
+    signal.addEventListener('abort', abort, { once: true })
+    timer = view.setTimeout(
+      () => finish(image.complete && image.naturalWidth > 0),
+      SHARED_MEDIA_READY_TIMEOUT_MS,
+    )
+
+    void image.decode().then(
+      () => finish(true),
+      () => finish(image.complete && image.naturalWidth > 0),
+    )
+  })
+}
+
+async function waitForImagePaintReady(
+  image: HTMLImageElement,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!await waitForImageLoad(image, signal)) {
+    return false
+  }
+
+  return waitForImageDecode(image, signal)
+}
+
+async function waitForElementsPaintReady(
+  elements: readonly Element[],
+  signal: AbortSignal,
+): Promise<boolean> {
+  const images = [...new Set(elements.flatMap(getElementImages))]
+
+  if (images.length === 0) {
+    return !signal.aborted
+  }
+
+  const readiness = await Promise.all(
+    images.map((image) => waitForImagePaintReady(image, signal)),
+  )
+
+  return !signal.aborted && readiness.every(Boolean)
 }
 
 function measureTargetRegistration(
@@ -1626,17 +1802,18 @@ function createWrapper(
   wrapper.style.setProperty('margin', '0', 'important')
   wrapper.style.setProperty('border', '0', 'important')
   wrapper.style.setProperty('background', 'transparent', 'important')
-  wrapper.style.setProperty('opacity', '1', 'important')
+  wrapper.style.setProperty('opacity', '0.001', 'important')
   wrapper.style.setProperty('visibility', 'visible', 'important')
   wrapper.style.setProperty('filter', 'none', 'important')
   wrapper.style.setProperty('border-radius', borderRadius)
   wrapper.style.setProperty('overflow', overflow, 'important')
   wrapper.style.setProperty('pointer-events', 'none', 'important')
-  wrapper.style.setProperty('transform', 'none', 'important')
+  wrapper.style.setProperty('backface-visibility', 'hidden', 'important')
+  wrapper.style.setProperty('transform', 'translateZ(0)', 'important')
   wrapper.style.setProperty('transform-origin', 'top left', 'important')
   wrapper.style.setProperty(
     'will-change',
-    'left, top, width, height, border-radius',
+    'left, top, width, height, border-radius, opacity',
     'important',
   )
   return wrapper
@@ -1968,6 +2145,7 @@ export class SharedElementSession {
   private readonly sessionAnimations = new Set<Animation>()
   private releaseFixedTracking: (() => void) | null = null
   private sourceHandoffFrozen = false
+  private activated = false
   private cleaned = false
   private targetCutoff: number
 
@@ -1992,6 +2170,38 @@ export class SharedElementSession {
         this.releaseFixedTracking = null
       }
     }
+  }
+
+  async activate(signal: AbortSignal): Promise<boolean> {
+    if (this.cleaned || signal.aborted) {
+      return false
+    }
+
+    if (this.activated) {
+      return true
+    }
+
+    const ready = await waitForElementsPaintReady(
+      this.sources.map((source) => source.sourceClone),
+      signal,
+    )
+
+    if (
+      !ready
+      || this.cleaned
+      || signal.aborted
+      || !await waitForSharedPaint(this.root.ownerDocument, signal)
+    ) {
+      return false
+    }
+
+    for (const source of this.sources) {
+      source.sourceOpacity = ownOpacity(source.registration.element)
+      source.wrapper.style.setProperty('opacity', '1', 'important')
+    }
+
+    this.activated = true
+    return true
   }
 
   setTargetCutoff(order: number, freezeSourceHandoff: boolean): void {
@@ -2056,7 +2266,7 @@ export class SharedElementSession {
       return measureTargetRegistration(
         registration,
         registration.element === source.registration.element
-          ? source.sourceVisibility
+          ? source.sourceOpacity ?? undefined
           : undefined,
       ) !== null
     })
@@ -2084,13 +2294,13 @@ export class SharedElementSession {
           this.targetCutoff,
         )
         const measuredCandidates = candidates.flatMap((registration) => {
-          const sourceVisibility = registration.element
+          const sourceOpacity = registration.element
             === source.registration.element
-            ? source.sourceVisibility
+            ? source.sourceOpacity ?? undefined
             : undefined
-          const rect = measureTargetRegistration(registration, sourceVisibility)
+          const rect = measureTargetRegistration(registration, sourceOpacity)
 
-          return rect ? [{ registration, rect, sourceVisibility }] : []
+          return rect ? [{ registration, rect, sourceOpacity }] : []
         })
 
         if (measuredCandidates.length > 1) {
@@ -2105,9 +2315,9 @@ export class SharedElementSession {
           return null
         }
 
-        const { registration, rect, sourceVisibility } = measured
+        const { registration, rect, sourceOpacity } = measured
 
-        return temporarilyRestoreStyle(sourceVisibility, () => {
+        return temporarilyRestoreStyle(sourceOpacity, () => {
           try {
             const targetVisualIdentity = getVisualIdentity(registration.element)
             const differentVisual = (
@@ -2182,7 +2392,7 @@ export class SharedElementSession {
           frameStyle: preparation.frameStyle,
           styleMorphs: styleMorphs || [],
           visualOpacity: preparation.visualOpacity,
-          visibility: ownVisibility(preparation.registration.element),
+          opacity: ownOpacity(preparation.registration.element),
           clone: visualClone,
         }
         preparation.source.target = target
@@ -2213,6 +2423,27 @@ export class SharedElementSession {
       missingNames: [...new Set(missingNames)],
       duplicateNames: [...new Set(duplicateNames)],
     }
+  }
+
+  async prepareMovement(signal: AbortSignal): Promise<boolean> {
+    if (this.cleaned || signal.aborted) {
+      return false
+    }
+
+    const elements: Element[] = []
+
+    for (const source of this.sources) {
+      elements.push(source.sourceClone)
+
+      if (source.target?.clone) {
+        elements.push(source.target.clone)
+      }
+    }
+
+    return (
+      await waitForElementsPaintReady(elements, signal)
+      && await waitForSharedPaint(this.root.ownerDocument, signal)
+    )
   }
 
   async animate(
@@ -2436,9 +2667,23 @@ export class SharedElementSession {
     signal: AbortSignal,
     onAnimation: (animation: Animation) => void,
   ): Promise<void> {
+    if (signal.aborted || this.cleaned) {
+      return
+    }
+
+    const targetElements = this.sources.flatMap((source) => (
+      source.target ? [source.target.registration.element] : []
+    ))
+
+    await waitForElementsPaintReady(targetElements, signal)
+
+    if (signal.aborted || this.cleaned) {
+      return
+    }
+
     this.revealTargets()
 
-    if (signal.aborted) {
+    if (!await waitForSharedPaint(this.root.ownerDocument, signal)) {
       return
     }
 
@@ -2466,41 +2711,43 @@ export class SharedElementSession {
       }
     }
 
-    if (animations.length === 0) {
-      return
+    if (animations.length > 0) {
+      await new Promise<void>((resolve) => {
+        let settled = false
+
+        const finish = () => {
+          if (settled) {
+            return
+          }
+
+          settled = true
+          signal.removeEventListener('abort', cancel)
+          resolve()
+        }
+        const cancel = () => {
+          cancelAnimations(animations)
+          finish()
+        }
+
+        if (signal.aborted) {
+          cancel()
+          return
+        }
+
+        signal.addEventListener('abort', cancel, { once: true })
+        void Promise.all(animations.map(async (animation) => {
+          try {
+            await animation.finished
+          } catch {
+            return
+          }
+        })).then(finish, finish)
+      })
     }
 
-    await new Promise<void>((resolve) => {
-      let settled = false
-
-      const finish = () => {
-        if (settled) {
-          return
-        }
-
-        settled = true
-        signal.removeEventListener('abort', cancel)
-        resolve()
-      }
-      const cancel = () => {
-        cancelAnimations(animations)
-        finish()
-      }
-
-      if (signal.aborted) {
-        cancel()
-        return
-      }
-
-      signal.addEventListener('abort', cancel, { once: true })
-      void Promise.all(animations.map(async (animation) => {
-        try {
-          await animation.finished
-        } catch {
-          return
-        }
-      })).then(finish, finish)
-    })
+    if (!signal.aborted && !this.cleaned) {
+      await waitForSharedPaint(this.root.ownerDocument, signal, 1)
+    }
   }
 
   private alignFixedSources(): void {
@@ -2741,7 +2988,7 @@ export class SharedElementSession {
   revealTargets(): void {
     for (const source of this.sources) {
       if (source.target) {
-        restoreStyle(source.target.visibility)
+        restoreStyle(source.target.opacity)
       }
     }
   }
@@ -2758,7 +3005,9 @@ export class SharedElementSession {
     this.revealTargets()
 
     for (const source of this.sources) {
-      restoreStyle(source.sourceVisibility)
+      if (source.sourceOpacity) {
+        restoreStyle(source.sourceOpacity)
+      }
     }
 
     this.revealViews()
@@ -2907,7 +3156,7 @@ export function createSharedElementSession(
     for (const entry of prepared) {
       sources.push({
         ...entry,
-        sourceVisibility: ownVisibility(entry.registration.element),
+        sourceOpacity: null,
         target: null,
       })
     }
@@ -2920,7 +3169,9 @@ export function createSharedElementSession(
     )
   } catch {
     for (const source of sources) {
-      restoreStyle(source.sourceVisibility)
+      if (source.sourceOpacity) {
+        restoreStyle(source.sourceOpacity)
+      }
     }
 
     root.remove()
