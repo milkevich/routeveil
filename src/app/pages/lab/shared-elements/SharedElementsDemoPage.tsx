@@ -4,7 +4,7 @@ import {
   useState,
   type SyntheticEvent,
 } from 'react'
-import { ArrowLeft, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Loader } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import {
   RouteveilLink,
@@ -633,10 +633,10 @@ function GalleryPost({
       <div className="shared-gallery__caption">
         {post.title
           ? (
-              <h3 className="shared-gallery__title">
-                {post.title}
-              </h3>
-            )
+            <h3 className="shared-gallery__title">
+              {post.title}
+            </h3>
+          )
           : null}
 
         <ArrowUpRight
@@ -666,22 +666,17 @@ function RouteA() {
     >
       {!ready
         ? (
+          <div className="shared-gallery__loading-container">
+            <Loader className="shared-gallery__loading-spinner" size={16}/>
             <p
               aria-live="polite"
-              className="shared-gallery__loading"
+              className="shared-gallery__loading-label"
               role="status"
-              style={{
-                color: 'var(--muted)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.72rem',
-                letterSpacing: '0.08em',
-                padding: '1rem 0',
-                textTransform: 'uppercase',
-              }}
             >
               Preparing gallery
             </p>
-          )
+          </div>
+        )
         : null}
 
       <div
@@ -690,6 +685,8 @@ function RouteA() {
         style={{
           pointerEvents: ready ? undefined : 'none',
           visibility: ready ? 'visible' : 'hidden',
+          opacity: ready ? 1 : 0,
+          transition: "opacity 1s ease"
         }}
       >
         {posts.map((post, index) => (
@@ -826,10 +823,10 @@ function RouteB() {
 
       {post.title
         ? (
-            <h2 className="shared-gallery-detail__title">
-              {post.title}
-            </h2>
-          )
+          <h2 className="shared-gallery-detail__title">
+            {post.title}
+          </h2>
+        )
         : null}
     </article>
   )
