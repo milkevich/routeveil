@@ -1828,7 +1828,6 @@ export function RouteveilProvider({
             sharedElements: request.sharedElements,
             view: pageView,
             trigger: request.sharedElementSource.trigger,
-            triggerKind: request.sharedElementSource.kind,
           })
 
           for (const name of selection.duplicateNames) {

@@ -326,14 +326,12 @@ export function selectSharedElementRegistrations({
   sharedElements,
   view,
   trigger,
-  triggerKind,
 }: {
   registrations: Iterable<SharedElementRegistration>
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
   view: HTMLElement
   trigger: Element | null
-  triggerKind: 'link' | 'programmatic'
 }): SharedElementSelection {
   const candidates = registrationsInView(registrations, view)
   const validCandidates = candidates.filter(isValidSourceRegistration)
@@ -354,6 +352,13 @@ export function selectSharedElementRegistrations({
         registration.name === scrollTargetName
       ))
     : []
+
+  const automaticCandidates = relatedCandidates.length > 0
+    ? relatedCandidates
+    : scrollCandidates.length > 0
+      ? scrollCandidates
+      : validCandidates
+
   const scopedCandidates = intent === false
     ? []
     : selectedNames
@@ -362,13 +367,8 @@ export function selectSharedElementRegistrations({
         ))
       : intent === 'all'
         ? validCandidates
-        : triggerKind === 'link'
-          ? relatedCandidates
-          : scrollCandidates.length > 0
-            ? scrollCandidates
-            : validCandidates.length === 1
-              ? validCandidates
-              : []
+        : automaticCandidates
+
   const groups = groupedByName(scopedCandidates)
   const duplicateNames = [...groups]
     .filter(([, group]) => group.length > 1)
@@ -385,7 +385,9 @@ export function selectSharedElementRegistrations({
   const prioritizedSet = new Set(prioritizedCandidates)
   const routeWideCandidates = [
     ...prioritizedCandidates,
-    ...uniqueCandidates.filter((registration) => !prioritizedSet.has(registration)),
+    ...uniqueCandidates.filter((registration) => (
+      !prioritizedSet.has(registration)
+    )),
   ]
 
   return {
