@@ -243,13 +243,13 @@ function applyMetadata(document: Document, pathname: string) {
     document,
     'property',
     'og:image',
-    'https://www.routeveil.dev/og-image-v2.png',
+    'https://www.routeveil.dev/og-image-v3.png',
   )
   upsertMeta(
     document,
     'property',
     'og:image:secure_url',
-    'https://www.routeveil.dev/og-image-v2.png',
+    'https://www.routeveil.dev/og-image-v3.png',
   )
   upsertMeta(document, 'property', 'og:image:type', 'image/png')
   upsertMeta(document, 'property', 'og:image:width', '1200')
@@ -267,7 +267,7 @@ function applyMetadata(document: Document, pathname: string) {
     document,
     'name',
     'twitter:image',
-    'https://www.routeveil.dev/og-image-v2.png',
+    'https://www.routeveil.dev/og-image-v3.png',
   )
   upsertMeta(
     document,
