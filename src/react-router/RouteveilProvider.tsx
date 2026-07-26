@@ -1863,6 +1863,7 @@ export function RouteveilProvider({
 
         if (sharedSession) {
           const activated = await sharedSession.activate(
+            pageView,
             run.controller.signal,
           )
           assertRunCurrent(run)
@@ -1872,13 +1873,182 @@ export function RouteveilProvider({
           }
         }
 
+        if (!sharedSession) {
+          claimView(run, pageView)
+          setRunPhase(run, 'exiting')
+
+          const exitAnimation = await waitForTask(
+            run,
+            animatePhase(
+              pageView,
+              phases.exit,
+              (animation) => run.animations.add(animation),
+            ),
+            ANIMATION_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'animation-timeout',
+              'Routeveil page exit animation did not settle.',
+            ),
+            () => cancelAnimations([...run.animations]),
+          )
+          assertRunCurrent(run)
+          await Promise.resolve()
+          assertRunCurrent(run)
+
+          setRunPhase(run, 'navigating')
+          await commitOnce(run, true, true)
+          assertRunCurrent(run)
+
+          const enteringView = viewRef.current ?? pageView
+          claimView(run, enteringView)
+          setRunPhase(run, 'entering')
+          const enterPromise = animatePhase(
+            enteringView,
+            phases.enter,
+            (animation) => run.animations.add(animation),
+          )
+          cancelAnimation(exitAnimation)
+
+          await waitForTask(
+            run,
+            enterPromise,
+            ANIMATION_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'animation-timeout',
+              'Routeveil page enter animation did not settle.',
+            ),
+            () => cancelAnimations([...run.animations]),
+          )
+          assertRunCurrent(run)
+          return
+        }
+
         claimView(run, pageView)
+        run.suppressIncomingView = true
+        sharedSession.setTargetCutoff(
+          sharedRegistrationOrderRef.current,
+          true,
+        )
         setRunPhase(run, 'exiting')
+
+        await commitOnce(run, true, true)
+        assertRunCurrent(run)
+        await nextPaint(run.controller.signal)
+        assertRunCurrent(run)
+
+        const enteringView = viewRef.current ?? pageView
+        claimView(run, enteringView)
+        sharedSession.suppressView(enteringView)
+        const sharedTargetDeadline = run.sharedTargetDeadline
+          ?? Date.now() + SHARED_TARGET_WATCHDOG_MS
+        run.sharedTargetDeadline = sharedTargetDeadline
+        await waitForSharedTargets(
+          run,
+          sharedSession,
+          enteringView,
+          sharedTargetDeadline,
+          false,
+        )
+        assertRunCurrent(run)
+        await waitForSharedScroll(
+          request,
+          run.controller.signal,
+          run.sharedScrollFallback,
+        )
+        assertRunCurrent(run)
+
+        if (shouldWaitForSharedScroll(
+          request,
+          run.sharedScrollFallback,
+        )) {
+          await nextPaint(run.controller.signal)
+          assertRunCurrent(run)
+        }
+
+        await waitForSharedTargets(
+          run,
+          sharedSession,
+          enteringView,
+          sharedTargetDeadline,
+          true,
+        )
+        assertRunCurrent(run)
+
+        const sharedScrollTargetName = getSharedScrollTargetName(request)
+
+        if (
+          sharedScrollTargetName
+          && !run.sharedScrollFallback
+          && !request.expectedPath.includes('#')
+        ) {
+          let stableFrames = 0
+
+          for (
+            let frame = 0;
+            frame < SHARED_SCROLL_STABILIZATION_FRAMES;
+            frame += 1
+          ) {
+            const verification = sharedSession.resolveScrollTarget(
+              sharedRegistrationsRef.current.values(),
+              enteringView,
+              sharedScrollTargetName,
+            )
+
+            if (verification.status !== 'ready') {
+              break
+            }
+
+            if (scrollToSharedTarget(verification.rect)) {
+              stableFrames = 0
+            } else {
+              stableFrames += 1
+
+              if (stableFrames >= SHARED_SCROLL_STABLE_FRAMES) {
+                break
+              }
+            }
+
+            await nextPaint(run.controller.signal)
+            assertRunCurrent(run)
+          }
+        }
+
+        let preparation = {
+          matchedNames: [] as string[],
+          missingNames: [] as string[],
+          duplicateNames: [] as string[],
+        }
+
+        try {
+          preparation = sharedSession.prepareTargets(
+            sharedRegistrationsRef.current.values(),
+            enteringView,
+          )
+        } catch {
+          warnOnce(
+            'shared-target-preparation-failed',
+            'Routeveil: Incoming shared elements could not be prepared. The page transition continued with its normal enter phase.',
+          )
+        }
+
+        for (const name of preparation.duplicateNames) {
+          warnOnce(
+            `shared-target-duplicate:${name}`,
+            `Routeveil: Multiple incoming shared elements use the name “${name}”. That name was skipped for this transition.`,
+          )
+        }
+
+        for (const name of preparation.missingNames) {
+          warnOnce(
+            `shared-target-missing:${name}`,
+            `Routeveil: No measurable incoming shared element named “${name}” was found. The page transition continued normally.`,
+          )
+        }
 
         const exitAnimation = await waitForTask(
           run,
           animatePhase(
-            pageView,
+            sharedSession.getExitElement(),
             phases.exit,
             (animation) => run.animations.add(animation),
           ),
@@ -1890,219 +2060,77 @@ export function RouteveilProvider({
           () => cancelAnimations([...run.animations]),
         )
         assertRunCurrent(run)
-        await Promise.resolve()
-        assertRunCurrent(run)
-
+        sharedSession.removeSnapshot()
+        cancelAnimation(exitAnimation)
         setRunPhase(run, 'navigating')
 
-        let revealSharedViewAfterEnterStarts = false
+        let keepSharedSessionThroughEnter = false
 
-        if (sharedSession) {
-          run.suppressIncomingView = true
-          sharedSession.suppressView(pageView)
-          sharedSession.setTargetCutoff(
-            sharedRegistrationOrderRef.current,
-            !shouldWaitForSharedScroll(request),
-          )
-          cancelAnimation(exitAnimation)
-        }
-
-        await commitOnce(
-          run,
-          sharedSession === null
-          || getSharedScrollTargetName(request) !== null,
-          true,
-        )
-        assertRunCurrent(run)
-
-        if (sharedSession) {
-          await nextPaint(run.controller.signal)
-          assertRunCurrent(run)
-        }
-
-        const enteringView = viewRef.current ?? pageView
-        claimView(run, enteringView)
-
-        if (sharedSession) {
-          sharedSession.suppressView(enteringView)
-          const sharedTargetDeadline = run.sharedTargetDeadline
-            ?? Date.now() + SHARED_TARGET_WATCHDOG_MS
-          run.sharedTargetDeadline = sharedTargetDeadline
-          await waitForSharedTargets(
-            run,
-            sharedSession,
-            enteringView,
-            sharedTargetDeadline,
-            false,
-          )
-          assertRunCurrent(run)
-          await waitForSharedScroll(
-            request,
+        if (preparation.matchedNames.length > 0) {
+          const movementReady = await sharedSession.prepareMovement(
             run.controller.signal,
-            run.sharedScrollFallback,
           )
           assertRunCurrent(run)
 
-          if (shouldWaitForSharedScroll(
-            request,
-            run.sharedScrollFallback,
-          )) {
-            await nextPaint(run.controller.signal)
-            assertRunCurrent(run)
-          }
-
-          await waitForSharedTargets(
-            run,
-            sharedSession,
-            enteringView,
-            sharedTargetDeadline,
-            true,
-          )
-          assertRunCurrent(run)
-
-          const sharedScrollTargetName = getSharedScrollTargetName(request)
-
-          if (
-            sharedScrollTargetName
-            && !run.sharedScrollFallback
-            && !request.expectedPath.includes('#')
-          ) {
-            let stableFrames = 0
-
-            for (
-              let frame = 0;
-              frame < SHARED_SCROLL_STABILIZATION_FRAMES;
-              frame += 1
-            ) {
-              const verification = sharedSession.resolveScrollTarget(
-                sharedRegistrationsRef.current.values(),
-                enteringView,
-                sharedScrollTargetName,
-              )
-
-              if (verification.status !== 'ready') {
-                break
-              }
-
-              if (scrollToSharedTarget(verification.rect)) {
-                stableFrames = 0
-              } else {
-                stableFrames += 1
-
-                if (stableFrames >= SHARED_SCROLL_STABLE_FRAMES) {
-                  break
-                }
-              }
-
-              await nextPaint(run.controller.signal)
-              assertRunCurrent(run)
-            }
-          }
-
-          let preparation = {
-            matchedNames: [] as string[],
-            missingNames: [] as string[],
-            duplicateNames: [] as string[],
-          }
-
-          try {
-            preparation = sharedSession.prepareTargets(
-              sharedRegistrationsRef.current.values(),
-              enteringView,
-            )
-          } catch {
+          if (!movementReady) {
             warnOnce(
-              'shared-target-preparation-failed',
-              'Routeveil: Incoming shared elements could not be prepared. The page transition continued with its normal enter phase.',
+              'shared-element-paint-readiness-failed',
+              'Routeveil: Shared-element media did not become paint-ready. The incoming page was safely restored and continued its normal enter transition.',
             )
-          }
-
-          for (const name of preparation.duplicateNames) {
-            warnOnce(
-              `shared-target-duplicate:${name}`,
-              `Routeveil: Multiple incoming shared elements use the name “${name}”. That name was skipped for this transition.`,
-            )
-          }
-
-          for (const name of preparation.missingNames) {
-            warnOnce(
-              `shared-target-missing:${name}`,
-              `Routeveil: No measurable incoming shared element named “${name}” was found. The page transition continued normally.`,
-            )
-          }
-
-          let keepSharedSessionThroughEnter = false
-
-          if (preparation.matchedNames.length > 0) {
-            const movementReady = await sharedSession.prepareMovement(
-              run.controller.signal,
-            )
-            assertRunCurrent(run)
-
-            if (!movementReady) {
-              warnOnce(
-                'shared-element-paint-readiness-failed',
-                'Routeveil: Shared-element media did not become paint-ready. The incoming page was safely restored and continued its normal enter transition.',
-              )
-            } else {
-              try {
-                keepSharedSessionThroughEnter = await waitForTask(
-                  run,
-                  sharedSession.animate(
-                    run.controller.signal,
-                    (animation) => {
-                      run.animations.add(animation)
-                      sharedAnimations.add(animation)
-                    },
-                  ),
-                  ANIMATION_WATCHDOG_MS,
-                  new TransitionLifecycleError(
-                    'animation-timeout',
-                    'Routeveil shared-element movement did not settle.',
-                  ),
-                  () => sharedSession?.cleanup(),
-                )
-                assertRunCurrent(run)
-              } catch (error) {
-                if (
-                  error instanceof TransitionCancelledError
-                  || run.controller.signal.aborted
-                ) {
-                  throw error
-                }
-
-                warnOnce(
-                  'shared-element-movement-failed',
-                  'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
-                )
-              }
-            }
-          }
-
-          for (const animation of sharedAnimations) {
-            run.animations.delete(animation)
-          }
-
-          sharedAnimations.clear()
-
-          if (keepSharedSessionThroughEnter) {
-            revealSharedViewAfterEnterStarts = true
           } else {
-            cleanupSharedSession()
-          }
+            try {
+              keepSharedSessionThroughEnter = await waitForTask(
+                run,
+                sharedSession.animate(
+                  run.controller.signal,
+                  (animation) => {
+                    run.animations.add(animation)
+                    sharedAnimations.add(animation)
+                  },
+                ),
+                ANIMATION_WATCHDOG_MS,
+                new TransitionLifecycleError(
+                  'animation-timeout',
+                  'Routeveil shared-element movement did not settle.',
+                ),
+                () => sharedSession?.cleanup(),
+              )
+              assertRunCurrent(run)
+            } catch (error) {
+              if (
+                error instanceof TransitionCancelledError
+                || run.controller.signal.aborted
+              ) {
+                throw error
+              }
 
-          assertRunCurrent(run)
+              warnOnce(
+                'shared-element-movement-failed',
+                'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
+              )
+            }
+          }
         }
 
+        for (const animation of sharedAnimations) {
+          run.animations.delete(animation)
+        }
+
+        sharedAnimations.clear()
+
+        if (!keepSharedSessionThroughEnter) {
+          cleanupSharedSession()
+        }
+
+        assertRunCurrent(run)
         setRunPhase(run, 'entering')
         const enterPromise = animatePhase(
           enteringView,
           phases.enter,
           (animation) => run.animations.add(animation),
         )
-        cancelAnimation(exitAnimation)
 
-        if (revealSharedViewAfterEnterStarts && sharedSession) {
+        if (keepSharedSessionThroughEnter && sharedSession) {
           sharedSession.revealViews()
           run.suppressIncomingView = false
         }

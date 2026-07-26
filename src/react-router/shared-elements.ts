@@ -184,6 +184,7 @@ type SourceEntry = {
   visualIdentity: string
   wrapper: HTMLElement
   sourceClone: Element
+  snapshotElement: Element | null
   cloneExclusions: CloneExclusionRecord[]
   sourceOpacity: StyleOwnership | null
   target: TargetEntry | null
@@ -1783,6 +1784,45 @@ function createPortalRoot(
   return root
 }
 
+function createViewSnapshotWrapper(
+  document: Document,
+  rect: SharedRect,
+  borderRadius: string,
+  overflow: string,
+): HTMLElement {
+  const wrapper = document.createElement('routeveil-shared-view')
+  wrapper.setAttribute('data-routeveil-shared-view', '')
+  wrapper.setAttribute('aria-hidden', 'true')
+  wrapper.inert = true
+  wrapper.style.setProperty('all', 'initial')
+  wrapper.style.setProperty('display', 'block', 'important')
+  wrapper.style.setProperty('position', 'fixed', 'important')
+  wrapper.style.setProperty('left', `${rect.left}px`)
+  wrapper.style.setProperty('top', `${rect.top}px`)
+  wrapper.style.setProperty('width', `${rect.width}px`)
+  wrapper.style.setProperty('height', `${rect.height}px`)
+  wrapper.style.setProperty('box-sizing', 'border-box', 'important')
+  wrapper.style.setProperty('padding', '0', 'important')
+  wrapper.style.setProperty('margin', '0', 'important')
+  wrapper.style.setProperty('border', '0', 'important')
+  wrapper.style.setProperty('background', 'transparent', 'important')
+  wrapper.style.setProperty('opacity', '0.001')
+  wrapper.style.setProperty('visibility', 'visible', 'important')
+  wrapper.style.setProperty('filter', 'none')
+  wrapper.style.setProperty('transform', 'none')
+  wrapper.style.setProperty('border-radius', borderRadius)
+  wrapper.style.setProperty('overflow', overflow, 'important')
+  wrapper.style.setProperty('pointer-events', 'none', 'important')
+  wrapper.style.setProperty('backface-visibility', 'hidden', 'important')
+  wrapper.style.setProperty('transform-origin', 'top left', 'important')
+  wrapper.style.setProperty(
+    'will-change',
+    'opacity, transform, filter',
+    'important',
+  )
+  return wrapper
+}
+
 function createWrapper(
   document: Document,
   name: string,
@@ -2143,6 +2183,8 @@ export class SharedElementSession {
   private readonly root: HTMLElement
   private readonly sources: SourceEntry[]
   private readonly visualBoundary: Element
+  private readonly snapshotWrapper: HTMLElement
+  private readonly snapshotClone: Element
   private readonly viewOpacity = new Map<HTMLElement, StyleOwnership>()
   private readonly sessionAnimations = new Set<Animation>()
   private releaseFixedTracking: (() => void) | null = null
@@ -2155,11 +2197,15 @@ export class SharedElementSession {
     root: HTMLElement,
     sources: SourceEntry[],
     visualBoundary: Element,
+    snapshotWrapper: HTMLElement,
+    snapshotClone: Element,
     targetCutoff: number,
   ) {
     this.root = root
     this.sources = sources
     this.visualBoundary = visualBoundary
+    this.snapshotWrapper = snapshotWrapper
+    this.snapshotClone = snapshotClone
     this.targetCutoff = targetCutoff
     this.names = sources.map((source) => source.registration.name)
     const view = root.ownerDocument.defaultView
@@ -2174,7 +2220,10 @@ export class SharedElementSession {
     }
   }
 
-  async activate(signal: AbortSignal): Promise<boolean> {
+  async activate(
+    view: HTMLElement,
+    signal: AbortSignal,
+  ): Promise<boolean> {
     if (this.cleaned || signal.aborted) {
       return false
     }
@@ -2184,7 +2233,10 @@ export class SharedElementSession {
     }
 
     const ready = await waitForElementsPaintReady(
-      this.sources.map((source) => source.sourceClone),
+      [
+        this.snapshotClone,
+        ...this.sources.map((source) => source.sourceClone),
+      ],
       signal,
     )
 
@@ -2197,9 +2249,11 @@ export class SharedElementSession {
       return false
     }
 
-    for (const source of this.sources) {
-      source.sourceOpacity = ownOpacity(source.registration.element)
-      source.wrapper.style.setProperty('opacity', '1', 'important')
+    this.snapshotWrapper.style.setProperty('opacity', '1')
+    this.suppressView(view)
+
+    if (!await waitForSharedPaint(this.root.ownerDocument, signal, 1)) {
+      return false
     }
 
     this.activated = true
@@ -2417,7 +2471,18 @@ export class SharedElementSession {
 
       if (!matchedSet.has(source.registration.name)) {
         source.wrapper.remove()
+        continue
       }
+
+      if (source.snapshotElement && isSupportedElement(source.snapshotElement)) {
+        source.snapshotElement.style.setProperty(
+          'visibility',
+          'hidden',
+          'important',
+        )
+      }
+
+      source.wrapper.style.setProperty('opacity', '1', 'important')
     }
 
     return {
@@ -2435,9 +2500,13 @@ export class SharedElementSession {
     const elements: Element[] = []
 
     for (const source of this.sources) {
+      if (!source.target) {
+        continue
+      }
+
       elements.push(source.sourceClone)
 
-      if (source.target?.clone) {
+      if (source.target.clone) {
         elements.push(source.target.clone)
       }
     }
@@ -2979,6 +3048,14 @@ export class SharedElementSession {
     }
   }
 
+  getExitElement(): HTMLElement {
+    return this.snapshotWrapper
+  }
+
+  removeSnapshot(): void {
+    this.snapshotWrapper.remove()
+  }
+
   revealViews(): void {
     for (const ownership of this.viewOpacity.values()) {
       restoreStyle(ownership)
@@ -3013,6 +3090,7 @@ export class SharedElementSession {
     }
 
     this.revealViews()
+    this.removeSnapshot()
     this.root.remove()
     this.root.replaceChildren()
     this.sources.length = 0
@@ -3046,6 +3124,51 @@ export function createSharedElementSession(
   if (!root) {
     return null
   }
+
+  let viewRect: SharedRect
+
+  try {
+    viewRect = copyRect(view.getBoundingClientRect())
+  } catch {
+    return null
+  }
+
+  if (!isUsableRect(viewRect)) {
+    return null
+  }
+
+  const snapshotClone = cloneVisualElement(view)
+
+  if (!snapshotClone) {
+    return null
+  }
+
+  const sourceTree = [view, ...view.querySelectorAll('*')]
+  const snapshotTree = [snapshotClone, ...snapshotClone.querySelectorAll('*')]
+
+  if (sourceTree.length !== snapshotTree.length) {
+    return null
+  }
+
+  const snapshotElements = new Map<Element, Element>()
+
+  for (let index = 0; index < sourceTree.length; index += 1) {
+    const sourceElement = sourceTree[index]
+    const snapshotElement = snapshotTree[index]
+
+    if (sourceElement && snapshotElement) {
+      snapshotElements.set(sourceElement, snapshotElement)
+    }
+  }
+
+  const snapshotWrapper = createViewSnapshotWrapper(
+    ownerDocument,
+    viewRect,
+    getBorderRadius(view),
+    getOverflow(view),
+  )
+  prepareVisualRoot(snapshotClone, view, visualBoundary)
+  snapshotWrapper.append(snapshotClone)
 
   const measurements = registrations.map((registration) => {
     try {
@@ -3118,6 +3241,7 @@ export function createSharedElementSession(
       visualIdentity,
       wrapper,
       sourceClone: clone,
+      snapshotElement: snapshotElements.get(registration.element) ?? null,
       cloneExclusions,
     }
   })
@@ -3130,6 +3254,7 @@ export function createSharedElementSession(
 
   try {
     visualBoundary.insertBefore(root, view.nextSibling)
+    root.append(snapshotWrapper)
 
     let rootLeft = 0
     let rootTop = 0
@@ -3167,6 +3292,8 @@ export function createSharedElementSession(
       root,
       sources,
       visualBoundary,
+      snapshotWrapper,
+      snapshotClone,
       targetCutoff,
     )
   } catch {
