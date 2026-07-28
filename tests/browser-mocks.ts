@@ -119,11 +119,14 @@ export function installBrowserMocks({
     })
     const animation = {
       cancel,
-      effect: retainFinishedAnimations
-        ? {
-            getKeyframes: () => Array.isArray(keyframes) ? keyframes : [],
-          }
-        : null,
+      effect: {
+        getKeyframes: retainFinishedAnimations
+          ? () => Array.isArray(keyframes) ? keyframes : []
+          : undefined,
+        pseudoElement: typeof options === 'object'
+          ? options.pseudoElement ?? null
+          : null,
+      },
       finished: finishedPromise,
       finish: vi.fn(() => controlled.finish()),
     } as unknown as Animation

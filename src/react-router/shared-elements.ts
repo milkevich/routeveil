@@ -225,6 +225,14 @@ export type SharedScrollTargetResolution =
 const SHARED_DURATION_MS = 480
 const SHARED_HANDOFF_DURATION_MS = 64
 const SHARED_MEDIA_READY_TIMEOUT_MS = 1_200
+const SHARED_TARGET_VISUAL_STABILITY_TIMEOUT_MS = 2_000
+const SHARED_TARGET_VISUAL_PROPERTIES = new Set([
+  'backdropFilter',
+  'filter',
+  'opacity',
+  'visibility',
+  'webkitBackdropFilter',
+])
 const SHARED_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
 const ROOT_FRAME_COMPARISON_PROPERTIES = new Set<string>([
   ...FRAME_STYLE_PROPERTIES.map(([, property]) => property),
@@ -1639,6 +1647,403 @@ async function waitForElementsPaintReady(
   return !signal.aborted && readiness.every(Boolean)
 }
 
+function animationAffectsTargetVisual(animation: Animation): boolean {
+  if (
+    animation.playState === 'idle'
+    || animation.playState === 'finished'
+  ) {
+    return false
+  }
+
+  const effect = animation.effect
+
+  if (
+    !effect
+    || !('getKeyframes' in effect)
+    || typeof effect.getKeyframes !== 'function'
+  ) {
+    return false
+  }
+
+  const timing = effect.getTiming()
+
+  if (timing.iterations === Infinity) {
+    return false
+  }
+
+  try {
+    return effect.getKeyframes().some((keyframe: ComputedKeyframe) => (
+      Object.keys(keyframe).some((property) => (
+        SHARED_TARGET_VISUAL_PROPERTIES.has(property)
+      ))
+    ))
+  } catch {
+    return false
+  }
+}
+
+function collectTargetVisualAnimations(
+  elements: readonly Element[],
+  boundary: Element,
+): Animation[] {
+  const animations = new Set<Animation>()
+
+  for (const element of elements) {
+    let current: Element | null = element
+
+    while (current && current !== boundary) {
+      if (typeof current.getAnimations === 'function') {
+        try {
+          for (const animation of current.getAnimations()) {
+            if (animationAffectsTargetVisual(animation)) {
+              animations.add(animation)
+            }
+          }
+        } catch {
+          continue
+        }
+      }
+
+      current = current.parentElement
+    }
+  }
+
+  return [...animations]
+}
+
+function waitForTargetVisualStability(
+  elements: readonly Element[],
+  boundary: Element,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const animations = collectTargetVisualAnimations(elements, boundary)
+  const view = boundary.ownerDocument.defaultView
+
+  if (animations.length === 0) {
+    return Promise.resolve(!signal.aborted)
+  }
+
+  if (!view || signal.aborted) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+
+    const cleanup = () => {
+      view.clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+    }
+    const finish = (result: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      resolve(result)
+    }
+    const abort = () => finish(false)
+
+    signal.addEventListener('abort', abort, { once: true })
+    timer = view.setTimeout(
+      () => finish(!signal.aborted),
+      SHARED_TARGET_VISUAL_STABILITY_TIMEOUT_MS,
+    )
+
+    void Promise.all(animations.map(async (animation) => {
+      try {
+        await animation.finished
+      } catch {
+        return
+      }
+    })).then(
+      () => finish(!signal.aborted),
+      () => finish(!signal.aborted),
+    )
+  })
+}
+
+
+type DetachedSharedHandoff = {
+  cancel: () => void
+  hold: () => void
+}
+
+const detachedSharedHandoffs = new Set<DetachedSharedHandoff>()
+
+function clearDetachedSharedHandoffs(
+  handoffs: Iterable<DetachedSharedHandoff> = detachedSharedHandoffs,
+): void {
+  for (const handoff of [...handoffs]) {
+    handoff.cancel()
+  }
+}
+
+function holdDetachedSharedHandoffs(): Set<DetachedSharedHandoff> {
+  const held = new Set(detachedSharedHandoffs)
+
+  for (const handoff of held) {
+    handoff.hold()
+  }
+
+  return held
+}
+
+function createDetachedHandoffRoot(
+  portalRoot: HTMLElement,
+  visualBoundary: Element,
+): HTMLElement | null {
+  const document = portalRoot.ownerDocument
+  const root = document.createElement('routeveil-shared-handoff')
+  root.setAttribute('data-routeveil-shared-handoff', '')
+  root.setAttribute('aria-hidden', 'true')
+  root.inert = true
+  root.style.setProperty('all', 'initial')
+  root.style.setProperty('display', 'block', 'important')
+  root.style.setProperty('position', 'fixed', 'important')
+  root.style.setProperty('inset', '0', 'important')
+  root.style.setProperty('width', 'auto', 'important')
+  root.style.setProperty('height', 'auto', 'important')
+  root.style.setProperty('padding', '0', 'important')
+  root.style.setProperty('margin', '0', 'important')
+  root.style.setProperty('border', '0', 'important')
+  root.style.setProperty('background', 'transparent', 'important')
+  root.style.setProperty('opacity', '1', 'important')
+  root.style.setProperty('visibility', 'visible', 'important')
+  root.style.setProperty('transform', 'none', 'important')
+  root.style.setProperty('filter', 'none', 'important')
+  root.style.setProperty('overflow', 'hidden', 'important')
+  root.style.setProperty('pointer-events', 'none', 'important')
+  root.style.setProperty('contain', 'layout style paint', 'important')
+  root.style.setProperty(
+    'z-index',
+    document.defaultView?.getComputedStyle(portalRoot).zIndex || 'auto',
+    'important',
+  )
+
+  try {
+    if (portalRoot.parentElement === visualBoundary) {
+      portalRoot.after(root)
+    } else {
+      visualBoundary.append(root)
+    }
+  } catch {
+    root.remove()
+    return null
+  }
+
+  return root
+}
+
+function freezeWrapperAtTarget(source: SourceEntry): HTMLElement | null {
+  const target = source.target
+
+  if (!target || !source.wrapper.isConnected) {
+    return null
+  }
+
+  let rect: SharedRect
+
+  try {
+    rect = copyRect(source.wrapper.getBoundingClientRect())
+  } catch {
+    return null
+  }
+
+  if (!isUsableRect(rect)) {
+    return null
+  }
+
+  source.wrapper.style.setProperty('position', 'fixed', 'important')
+  source.wrapper.style.setProperty('inset', 'auto', 'important')
+  source.wrapper.style.setProperty('left', `${String(rect.left)}px`, 'important')
+  source.wrapper.style.setProperty('top', `${String(rect.top)}px`, 'important')
+  source.wrapper.style.setProperty('right', 'auto', 'important')
+  source.wrapper.style.setProperty('bottom', 'auto', 'important')
+  source.wrapper.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  source.wrapper.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  source.wrapper.style.setProperty(
+    'border-radius',
+    target.borderRadius,
+    'important',
+  )
+  source.wrapper.style.setProperty('transform', 'translateZ(0)', 'important')
+  source.wrapper.style.setProperty('pointer-events', 'none', 'important')
+  source.wrapper.style.setProperty('opacity', '1')
+
+  if (isSupportedElement(source.sourceClone)) {
+    applyFrameStyle(source.sourceClone, target.frameStyle)
+
+    if (target.clone) {
+      source.sourceClone.style.setProperty('opacity', '0', 'important')
+    }
+  }
+
+  for (const morph of target.styleMorphs) {
+    applyStyleMorph(morph.clone, morph.target)
+  }
+
+  if (target.clone && isSupportedElement(target.clone)) {
+    applyFrameStyle(target.clone, target.frameStyle)
+    target.clone.style.setProperty(
+      'opacity',
+      String(target.visualOpacity),
+      'important',
+    )
+  }
+
+  try {
+    cancelAnimations(source.wrapper.getAnimations({ subtree: true }))
+  } catch {
+    return source.wrapper
+  }
+
+  return source.wrapper
+}
+
+function scheduleDetachedSharedHandoff(
+  root: HTMLElement,
+  wrappers: readonly HTMLElement[],
+  targetElements: readonly Element[],
+  visualBoundary: Element,
+): void {
+  const document = root.ownerDocument
+  const view = document.defaultView
+  const controller = new AbortController()
+  const fadeAnimations = new Set<Animation>()
+  let observer: MutationObserver | null = null
+  let disposed = false
+  let held = false
+
+  const removeLifecycleListeners = () => {
+    observer?.disconnect()
+    observer = null
+    view?.removeEventListener('resize', handoff.cancel)
+    view?.removeEventListener('orientationchange', handoff.cancel)
+    view?.removeEventListener('scroll', handoff.cancel, true)
+  }
+
+  const handoff: DetachedSharedHandoff = {
+    cancel: () => {
+      if (disposed) {
+        return
+      }
+
+      disposed = true
+      controller.abort()
+      removeLifecycleListeners()
+      cancelAnimations([...fadeAnimations])
+      fadeAnimations.clear()
+      root.remove()
+      detachedSharedHandoffs.delete(handoff)
+    },
+    hold: () => {
+      if (disposed || held) {
+        return
+      }
+
+      held = true
+      controller.abort()
+      removeLifecycleListeners()
+      cancelAnimations([...fadeAnimations])
+      fadeAnimations.clear()
+
+      for (const wrapper of wrappers) {
+        if (wrapper.isConnected) {
+          wrapper.style.setProperty('opacity', '1', 'important')
+        }
+      }
+    },
+  }
+
+  detachedSharedHandoffs.add(handoff)
+  view?.addEventListener('resize', handoff.cancel, { once: true })
+  view?.addEventListener('orientationchange', handoff.cancel, { once: true })
+  view?.addEventListener('scroll', handoff.cancel, {
+    capture: true,
+    once: true,
+  })
+
+  if (typeof MutationObserver !== 'undefined') {
+    observer = new MutationObserver(() => {
+      if (
+        !held
+        && targetElements.every((element) => !element.isConnected)
+      ) {
+        handoff.cancel()
+      }
+    })
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    })
+  }
+
+  void (async () => {
+    try {
+      await waitForTargetVisualStability(
+        targetElements,
+        visualBoundary,
+        controller.signal,
+      )
+
+      if (
+        held
+        || controller.signal.aborted
+        || targetElements.every((element) => !element.isConnected)
+      ) {
+        return
+      }
+
+      if (!await waitForSharedPaint(document, controller.signal, 1)) {
+        return
+      }
+
+      for (const wrapper of wrappers) {
+        if (!wrapper.isConnected) {
+          continue
+        }
+
+        wrapper.style.setProperty('opacity', '1')
+
+        try {
+          const animation = wrapper.animate([
+            { opacity: 1 },
+            { opacity: 0 },
+          ], {
+            duration: SHARED_HANDOFF_DURATION_MS,
+            easing: 'linear',
+            fill: 'forwards',
+          })
+          fadeAnimations.add(animation)
+        } catch {
+          wrapper.style.setProperty('opacity', '0', 'important')
+        }
+      }
+
+      if (fadeAnimations.size > 0) {
+        await Promise.all([...fadeAnimations].map(async (animation) => {
+          try {
+            await animation.finished
+          } catch {
+            return
+          }
+        }))
+      }
+
+      if (!controller.signal.aborted) {
+        await waitForSharedPaint(document, controller.signal, 1)
+      }
+    } finally {
+      if (!held) {
+        handoff.cancel()
+      }
+    }
+  })()
+}
+
 function measureTargetRegistration(
   registration: SharedElementRegistration,
   visibility?: StyleOwnership,
@@ -2187,6 +2592,7 @@ export class SharedElementSession {
   private readonly snapshotClone: Element
   private readonly viewOpacity = new Map<HTMLElement, StyleOwnership>()
   private readonly sessionAnimations = new Set<Animation>()
+  private readonly previousDetachedHandoffs: Set<DetachedSharedHandoff>
   private releaseFixedTracking: (() => void) | null = null
   private sourceHandoffFrozen = false
   private activated = false
@@ -2200,6 +2606,7 @@ export class SharedElementSession {
     snapshotWrapper: HTMLElement,
     snapshotClone: Element,
     targetCutoff: number,
+    previousDetachedHandoffs: Set<DetachedSharedHandoff>,
   ) {
     this.root = root
     this.sources = sources
@@ -2207,6 +2614,7 @@ export class SharedElementSession {
     this.snapshotWrapper = snapshotWrapper
     this.snapshotClone = snapshotClone
     this.targetCutoff = targetCutoff
+    this.previousDetachedHandoffs = previousDetachedHandoffs
     this.names = sources.map((source) => source.registration.name)
     const view = root.ownerDocument.defaultView
 
@@ -2511,10 +2919,17 @@ export class SharedElementSession {
       }
     }
 
-    return (
+    const ready = (
       await waitForElementsPaintReady(elements, signal)
       && await waitForSharedPaint(this.root.ownerDocument, signal)
     )
+
+    if (ready) {
+      clearDetachedSharedHandoffs(this.previousDetachedHandoffs)
+      this.previousDetachedHandoffs.clear()
+    }
+
+    return ready
   }
 
   async animate(
@@ -2696,24 +3111,33 @@ export class SharedElementSession {
         }
 
         settled = true
-        signal.removeEventListener('abort', cancel)
-        view?.removeEventListener('resize', cancel)
-        view?.removeEventListener('orientationchange', cancel)
+        signal.removeEventListener('abort', abort)
+        view?.removeEventListener('resize', preserveAtTarget)
+        view?.removeEventListener('orientationchange', preserveAtTarget)
         resolve(result)
       }
-      const cancel = () => {
+      const abort = () => {
         cancelAnimations(animations)
         finish(false)
       }
+      const preserveAtTarget = () => {
+        cancelAnimations(animations)
+        this.settleAtTargets(movementRects)
+        finish(true)
+      }
 
       if (signal.aborted) {
-        cancel()
+        abort()
         return
       }
 
-      signal.addEventListener('abort', cancel, { once: true })
-      view?.addEventListener('resize', cancel, { once: true })
-      view?.addEventListener('orientationchange', cancel, { once: true })
+      signal.addEventListener('abort', abort, { once: true })
+      view?.addEventListener('resize', preserveAtTarget, { once: true })
+      view?.addEventListener(
+        'orientationchange',
+        preserveAtTarget,
+        { once: true },
+      )
       void Promise.all(animations.map(async (animation) => {
         try {
           await animation.finished
@@ -2738,6 +3162,8 @@ export class SharedElementSession {
     signal: AbortSignal,
     onAnimation: (animation: Animation) => void,
   ): Promise<void> {
+    void onAnimation
+
     if (signal.aborted || this.cleaned) {
       return
     }
@@ -2747,6 +3173,53 @@ export class SharedElementSession {
     ))
 
     await waitForElementsPaintReady(targetElements, signal)
+
+    if (signal.aborted || this.cleaned) {
+      return
+    }
+
+    const detachedRoot = createDetachedHandoffRoot(
+      this.root,
+      this.visualBoundary,
+    )
+    const detachedWrappers = detachedRoot
+      ? this.sources.flatMap((source) => {
+          const wrapper = freezeWrapperAtTarget(source)
+
+          if (!wrapper) {
+            return []
+          }
+
+          detachedRoot.append(wrapper)
+          return [wrapper]
+        })
+      : []
+
+    if (detachedRoot && detachedWrappers.length > 0) {
+      this.revealTargets()
+      scheduleDetachedSharedHandoff(
+        detachedRoot,
+        detachedWrappers,
+        targetElements,
+        this.visualBoundary,
+      )
+      await waitForSharedPaint(this.root.ownerDocument, signal, 1)
+      return
+    }
+
+    detachedRoot?.remove()
+
+    await waitForTargetVisualStability(
+      targetElements,
+      this.visualBoundary,
+      signal,
+    )
+
+    if (signal.aborted || this.cleaned) {
+      return
+    }
+
+    await waitForSharedPaint(this.root.ownerDocument, signal, 1)
 
     if (signal.aborted || this.cleaned) {
       return
@@ -2776,44 +3249,19 @@ export class SharedElementSession {
         })
         animations.push(animation)
         this.sessionAnimations.add(animation)
-        onAnimation(animation)
       } catch {
         source.wrapper.style.setProperty('opacity', '0', 'important')
       }
     }
 
     if (animations.length > 0) {
-      await new Promise<void>((resolve) => {
-        let settled = false
-
-        const finish = () => {
-          if (settled) {
-            return
-          }
-
-          settled = true
-          signal.removeEventListener('abort', cancel)
-          resolve()
-        }
-        const cancel = () => {
-          cancelAnimations(animations)
-          finish()
-        }
-
-        if (signal.aborted) {
-          cancel()
+      await Promise.all(animations.map(async (animation) => {
+        try {
+          await animation.finished
+        } catch {
           return
         }
-
-        signal.addEventListener('abort', cancel, { once: true })
-        void Promise.all(animations.map(async (animation) => {
-          try {
-            await animation.finished
-          } catch {
-            return
-          }
-        })).then(finish, finish)
-      })
+      }))
     }
 
     if (!signal.aborted && !this.cleaned) {
@@ -3078,6 +3526,8 @@ export class SharedElementSession {
     }
 
     this.cleaned = true
+    clearDetachedSharedHandoffs(this.previousDetachedHandoffs)
+    this.previousDetachedHandoffs.clear()
     this.releaseFixedTracking?.()
     cancelAnimations([...this.sessionAnimations])
     this.sessionAnimations.clear()
@@ -3288,6 +3738,8 @@ export function createSharedElementSession(
       })
     }
 
+    const previousDetachedHandoffs = holdDetachedSharedHandoffs()
+
     return new SharedElementSession(
       root,
       sources,
@@ -3295,6 +3747,7 @@ export function createSharedElementSession(
       snapshotWrapper,
       snapshotClone,
       targetCutoff,
+      previousDetachedHandoffs,
     )
   } catch {
     for (const source of sources) {

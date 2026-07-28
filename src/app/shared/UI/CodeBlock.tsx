@@ -1,7 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CodeLanguage } from '../lib/highlightCode'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
-import { useRouteveilPendingWork } from '../../../react-router'
+import { useRouteveilContext } from '../../../react-router/RouteveilContext.js'
+import {
+  highlightCode,
+  type CodeLanguage,
+} from '../lib/highlightCode'
 
 type CopyState = 'idle' | 'copied' | 'error'
 
@@ -10,9 +13,16 @@ type HighlightedCode = {
   key: string
 }
 
-type PendingHighlight = {
-  key: string
-  settle: () => void
+type HighlightQueueJob = {
+  cancelled: boolean
+  run: () => Promise<void>
+}
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (
+    callback: () => void,
+    options?: { timeout: number },
+  ) => number
 }
 
 type CodeBlockProps = {
@@ -21,95 +31,163 @@ type CodeBlockProps = {
   language?: CodeLanguage
 }
 
+const highlightCache = new Map<string, Promise<string>>()
+const highlightQueue: HighlightQueueJob[] = []
+let highlightQueueScheduled = false
+
+function getHighlightedCode(
+  key: string,
+  code: string,
+  language: CodeLanguage,
+): Promise<string> {
+  const cached = highlightCache.get(key)
+
+  if (cached) {
+    return cached
+  }
+
+  const promise = highlightCode(code, language)
+
+  highlightCache.set(key, promise)
+  void promise.catch(() => {
+    if (highlightCache.get(key) === promise) {
+      highlightCache.delete(key)
+    }
+  })
+
+  return promise
+}
+
+function scheduleHighlightQueue(): void {
+  if (
+    highlightQueueScheduled
+    || highlightQueue.length === 0
+    || typeof window === 'undefined'
+  ) {
+    return
+  }
+
+  highlightQueueScheduled = true
+
+  const runNext = () => {
+    highlightQueueScheduled = false
+
+    let job = highlightQueue.shift()
+
+    while (job?.cancelled) {
+      job = highlightQueue.shift()
+    }
+
+    if (!job) {
+      return
+    }
+
+    void job.run().finally(scheduleHighlightQueue)
+  }
+
+  const requestIdleCallback = (window as IdleWindow).requestIdleCallback
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(runNext, { timeout: 500 })
+  } else {
+    window.setTimeout(runNext, 0)
+  }
+}
+
+function enqueueHighlight(run: () => Promise<void>): () => void {
+  const job: HighlightQueueJob = {
+    cancelled: false,
+    run,
+  }
+
+  highlightQueue.push(job)
+  scheduleHighlightQueue()
+
+  return () => {
+    job.cancelled = true
+  }
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  if (
+    typeof navigator.clipboard?.writeText === 'function'
+    && window.isSecureContext
+  ) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  const activeElement = document.activeElement
+
+  textarea.value = text
+  textarea.readOnly = true
+  textarea.setAttribute('aria-hidden', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.inset = '0 auto auto -9999px'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.fontSize = '16px'
+  document.body.append(textarea)
+
+  textarea.focus({ preventScroll: true })
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  const copied = document.execCommand('copy')
+  textarea.remove()
+
+  if (activeElement instanceof HTMLElement) {
+    activeElement.focus({ preventScroll: true })
+  }
+
+  if (!copied) {
+    throw new Error('Clipboard copy failed.')
+  }
+}
+
 export function CodeBlock({
   children,
   filename,
   language = 'tsx',
 }: CodeBlockProps) {
-  const registerPendingWork = useRouteveilPendingWork()
+  const { phase } = useRouteveilContext()
   const [copyState, setCopyState] = useState<CopyState>('idle')
   const [highlightedCode, setHighlightedCode] = useState<HighlightedCode>()
   const resetTimer = useRef<number>(undefined)
-  const pendingHighlightRef = useRef<PendingHighlight | null>(null)
   const highlightKey = `${language}\u0000${children}`
   const highlightedHtml = highlightedCode?.key === highlightKey
     ? highlightedCode.html
     : undefined
 
-  useLayoutEffect(() => {
-    let settled = false
-    let resolvePendingWork!: () => void
-    const pendingWork = new Promise<void>((resolve) => {
-      resolvePendingWork = resolve
-    })
-    const releasePendingWork = registerPendingWork(pendingWork)
-    const pendingHighlight: PendingHighlight = {
-      key: highlightKey,
-      settle: () => {
-        if (settled) {
-          return
-        }
-
-        settled = true
-        resolvePendingWork()
-        releasePendingWork()
-      },
-    }
-
-    pendingHighlightRef.current = pendingHighlight
-
-    return () => {
-      if (pendingHighlightRef.current === pendingHighlight) {
-        pendingHighlightRef.current = null
-      }
-
-      pendingHighlight.settle()
-    }
-  }, [highlightKey, registerPendingWork])
-
   useEffect(() => {
+    if (phase !== 'idle' || highlightedHtml) {
+      return
+    }
+
     let active = true
-    let firstFrame = 0
-    let secondFrame = 0
-    const pendingHighlight = pendingHighlightRef.current
+    const cancel = enqueueHighlight(async () => {
+      try {
+        const html = await getHighlightedCode(
+          highlightKey,
+          children,
+          language,
+        )
 
-    const startHighlighting = () => {
-      secondFrame = 0
-
-      void import('../lib/highlightCode')
-        .then(({ highlightCode }) => highlightCode(children, language))
-        .then((html) => {
-          if (active) {
-            setHighlightedCode({ html, key: highlightKey })
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => pendingHighlight?.settle())
-    }
-
-    if (typeof window.requestAnimationFrame === 'function') {
-      firstFrame = window.requestAnimationFrame(() => {
-        firstFrame = 0
-        secondFrame = window.requestAnimationFrame(startHighlighting)
-      })
-    } else {
-      startHighlighting()
-    }
+        if (active) {
+          setHighlightedCode({ html, key: highlightKey })
+        }
+      } catch {
+        return
+      }
+    })
 
     return () => {
       active = false
-
-      if (firstFrame) {
-        window.cancelAnimationFrame(firstFrame)
-      }
-
-      if (secondFrame) {
-        window.cancelAnimationFrame(secondFrame)
-      }
-
-      pendingHighlight?.settle()
+      cancel()
     }
-  }, [children, highlightKey, language])
+  }, [children, highlightKey, highlightedHtml, language, phase])
 
   useEffect(() => () => window.clearTimeout(resetTimer.current), [])
 
@@ -117,7 +195,7 @@ export function CodeBlock({
     window.clearTimeout(resetTimer.current)
 
     try {
-      await navigator.clipboard.writeText(children)
+      await writeClipboardText(children)
       setCopyState('copied')
     } catch {
       setCopyState('error')

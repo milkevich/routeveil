@@ -52,6 +52,16 @@ import type {
   SharedElementSession,
   SharedScrollTargetResolution,
 } from './shared-elements.js'
+import {
+  animateViewportBackgroundPhase,
+  animateViewportElementPhase,
+  animateViewportSnapshotPhase,
+  createViewportSnapshot,
+  pausePageViewAnimations,
+  retainViewportBackground,
+  containViewportElementOverflow,
+  suppressPageView,
+} from './page-view-transition.js'
 
 type LocationSnapshot = {
   key: string
@@ -104,6 +114,7 @@ type TransitionRun = {
   suppressIncomingView: boolean
   acceptingPendingWork: boolean
   pendingWork: Set<Promise<void>>
+  preloadPromise: Promise<void> | null
 }
 
 type LocationWaiter = {
@@ -824,7 +835,7 @@ function reportPreloadError(
 
   warnOnce(
     `preload-error:${request.expectedPath}:${errorIdentity}`,
-    'Routeveil: The destination route could not be preloaded. Navigation continued without a transition.',
+    'Routeveil: The destination route could not be preloaded. The transition continued while navigation loaded it normally.',
   )
 
   if (isRouteveilDevelopment()) {
@@ -1558,11 +1569,17 @@ export function RouteveilProvider({
     run: TransitionRun,
     waitForPaint = true,
     allowSharedScroll = false,
+    deferIncomingReadiness = false,
   ): Promise<void> => {
     assertRunCurrent(run)
 
     if (run.commitState !== 'pending') {
       return
+    }
+
+    if (run.preloadPromise) {
+      await run.preloadPromise
+      assertRunCurrent(run)
     }
 
     const waitsForLocation = run.request.waitForLocationChange !== false
@@ -1662,7 +1679,11 @@ export function RouteveilProvider({
       if (result.status === 'ready') {
         handledSharedScroll = true
 
-        if (scrollToSharedTarget(result.rect) && !run.sharedSession) {
+        if (
+          scrollToSharedTarget(result.rect)
+          && !run.sharedSession
+          && waitForPaint
+        ) {
           await nextPaint(run.controller.signal)
           assertRunCurrent(run)
         }
@@ -1690,7 +1711,14 @@ export function RouteveilProvider({
       )
     }
 
-    await waitForIncomingReadiness(run)
+    if (waitForPaint) {
+      await waitForIncomingReadiness(run)
+    } else if (!deferIncomingReadiness) {
+      run.acceptingPendingWork = false
+      run.pendingWork.clear()
+      await Promise.resolve()
+    }
+
     assertRunCurrent(run)
   }, [
     assertRunCurrent,
@@ -1736,28 +1764,28 @@ export function RouteveilProvider({
     const { request } = run
     const definition = resolvedTransitions[request.transition]
 
-    try {
-      if (request.preload) {
-        try {
-          await waitForTask(
-            run,
-            request.preload(),
-            PRELOAD_WATCHDOG_MS,
-            new TransitionLifecycleError(
-              'preload-timeout',
-              'Routeveil destination preloading did not settle.',
-            ),
-          )
-          assertRunCurrent(run)
-        } catch (error) {
-          reportPreloadError(request, error)
-          setRunPhase(run, 'navigating')
-          await commitOnce(run)
-          assertRunCurrent(run)
-          return
-        }
-      }
+    if (request.preload) {
+      const preloadTask = Promise.resolve().then(() => request.preload!())
 
+      run.preloadPromise = waitForTask(
+        run,
+        preloadTask,
+        PRELOAD_WATCHDOG_MS,
+        new TransitionLifecycleError(
+          'preload-timeout',
+          'Routeveil destination preloading did not settle.',
+        ),
+      ).catch((error) => {
+        if (
+          !(error instanceof TransitionCancelledError)
+          && !run.controller.signal.aborted
+        ) {
+          reportPreloadError(request, error)
+        }
+      })
+    }
+
+    try {
       if (
         !definition
         || (definition.type !== 'page' && definition.type !== 'overlay')
@@ -1796,6 +1824,40 @@ export function RouteveilProvider({
         const phases = definition.resolve?.(
           request.transitionOptions,
         ) ?? definition
+        let incomingAnimationsPaused = false
+        let incomingAnimationsReleased = false
+        let releaseIncomingAnimations: () => void = () => undefined
+        let removeIncomingAnimationsCleanup: () => void = () => undefined
+        const pauseIncomingAnimations = () => {
+          if (
+            request.waitForLocationChange === false
+            || incomingAnimationsPaused
+            || incomingAnimationsReleased
+          ) {
+            return
+          }
+
+          incomingAnimationsPaused = true
+          releaseIncomingAnimations = pausePageViewAnimations(
+            pageView.ownerDocument,
+          )
+          removeIncomingAnimationsCleanup = registerCleanup(
+            run,
+            releaseIncomingAnimations,
+          )
+        }
+        const startIncomingAnimations = () => {
+          if (
+            !incomingAnimationsPaused
+            || incomingAnimationsReleased
+          ) {
+            return
+          }
+
+          incomingAnimationsReleased = true
+          releaseIncomingAnimations()
+          removeIncomingAnimationsCleanup()
+        }
         let sharedSession: SharedElementSession | null = null
         let releaseSharedSessionCleanup: () => void = () => undefined
         const sharedAnimations = new Set<Animation>()
@@ -1877,13 +1939,50 @@ export function RouteveilProvider({
           claimView(run, pageView)
           setRunPhase(run, 'exiting')
 
-          const exitAnimation = await waitForTask(
+          const outgoingBackground = retainViewportBackground(
+            pageView,
+            phases.exit,
+          )
+          const removeOutgoingBackgroundCleanup = registerCleanup(
             run,
-            animatePhase(
-              pageView,
-              phases.exit,
-              (animation) => run.animations.add(animation),
-            ),
+            outgoingBackground.cleanup,
+          )
+          const outgoingSnapshot = createViewportSnapshot(pageView)
+
+          if (!outgoingSnapshot) {
+            outgoingBackground.cleanup()
+            removeOutgoingBackgroundCleanup()
+            pauseIncomingAnimations()
+            setRunPhase(run, 'navigating')
+            await commitOnce(run, true, true)
+            assertRunCurrent(run)
+            startIncomingAnimations()
+            return
+          }
+
+          const removeOutgoingSnapshotCleanup = registerCleanup(
+            run,
+            outgoingSnapshot.cleanup,
+          )
+          const releaseOutgoingView = suppressPageView(pageView)
+          const removeOutgoingViewCleanup = registerCleanup(
+            run,
+            releaseOutgoingView,
+          )
+          const exitPromise = waitForTask(
+            run,
+            Promise.all([
+              animateViewportSnapshotPhase(
+                outgoingSnapshot,
+                phases.exit,
+                (animation) => run.animations.add(animation),
+              ),
+              animateViewportBackgroundPhase(
+                outgoingBackground,
+                phases.exit,
+                (animation) => run.animations.add(animation),
+              ),
+            ]).then(([animation]) => animation),
             ANIMATION_WATCHDOG_MS,
             new TransitionLifecycleError(
               'animation-timeout',
@@ -1891,25 +1990,95 @@ export function RouteveilProvider({
             ),
             () => cancelAnimations([...run.animations]),
           )
+
+          pauseIncomingAnimations()
+
+          const incomingPreparation = (async () => {
+            await commitOnce(run, false, true, true)
+            assertRunCurrent(run)
+
+            const enteringView = viewRef.current ?? pageView
+            claimView(run, enteringView)
+            const releaseIncomingView = enteringView === pageView
+              ? releaseOutgoingView
+              : suppressPageView(enteringView)
+            const removeIncomingViewCleanup = enteringView === pageView
+              ? removeOutgoingViewCleanup
+              : registerCleanup(run, releaseIncomingView)
+            const incomingBackground = retainViewportBackground(
+              enteringView,
+              phases.enter,
+            )
+            const removeIncomingBackgroundCleanup = registerCleanup(
+              run,
+              incomingBackground.cleanup,
+            )
+
+            await waitForSharedScroll(
+              request,
+              run.controller.signal,
+              run.sharedScrollFallback,
+            )
+            assertRunCurrent(run)
+            await waitForIncomingReadiness(run)
+            assertRunCurrent(run)
+
+            return {
+              enteringView,
+              incomingBackground,
+              releaseIncomingView,
+              removeIncomingBackgroundCleanup,
+              removeIncomingViewCleanup,
+            }
+          })()
+
+          const exitAnimation = await exitPromise
           assertRunCurrent(run)
           await Promise.resolve()
           assertRunCurrent(run)
-
           setRunPhase(run, 'navigating')
-          await commitOnce(run, true, true)
+
+          const {
+            enteringView,
+            incomingBackground,
+            releaseIncomingView,
+            removeIncomingBackgroundCleanup,
+            removeIncomingViewCleanup,
+          } = await incomingPreparation
           assertRunCurrent(run)
 
-          const enteringView = viewRef.current ?? pageView
-          claimView(run, enteringView)
+          outgoingBackground.cleanup()
+          removeOutgoingBackgroundCleanup()
           setRunPhase(run, 'entering')
-          const enterPromise = animatePhase(
-            enteringView,
-            phases.enter,
-            (animation) => run.animations.add(animation),
-          )
           cancelAnimation(exitAnimation)
+          outgoingSnapshot.cleanup()
+          removeOutgoingSnapshotCleanup()
 
-          await waitForTask(
+          const releaseIncomingOverflow = containViewportElementOverflow(
+            enteringView,
+          )
+          const removeIncomingOverflowCleanup = registerCleanup(
+            run,
+            releaseIncomingOverflow,
+          )
+          const enterPromise = Promise.all([
+            animateViewportElementPhase(
+              enteringView,
+              phases.enter,
+              (animation) => run.animations.add(animation),
+            ),
+            animateViewportBackgroundPhase(
+              incomingBackground,
+              phases.enter,
+              (animation) => run.animations.add(animation),
+            ),
+          ]).then(([animation]) => animation)
+
+          startIncomingAnimations()
+          releaseIncomingView()
+          removeIncomingViewCleanup()
+
+          const enterAnimation = await waitForTask(
             run,
             enterPromise,
             ANIMATION_WATCHDOG_MS,
@@ -1920,6 +2089,12 @@ export function RouteveilProvider({
             () => cancelAnimations([...run.animations]),
           )
           assertRunCurrent(run)
+
+          cancelAnimation(enterAnimation)
+          releaseIncomingOverflow()
+          removeIncomingOverflowCleanup()
+          incomingBackground.cleanup()
+          removeIncomingBackgroundCleanup()
           return
         }
 
@@ -1930,6 +2105,7 @@ export function RouteveilProvider({
           true,
         )
         setRunPhase(run, 'exiting')
+        pauseIncomingAnimations()
 
         await commitOnce(run, true, true)
         assertRunCurrent(run)
@@ -2079,7 +2255,7 @@ export function RouteveilProvider({
             )
           } else {
             try {
-              keepSharedSessionThroughEnter = await waitForTask(
+              await waitForTask(
                 run,
                 sharedSession.animate(
                   run.controller.signal,
@@ -2096,6 +2272,7 @@ export function RouteveilProvider({
                 () => sharedSession?.cleanup(),
               )
               assertRunCurrent(run)
+              keepSharedSessionThroughEnter = true
             } catch (error) {
               if (
                 error instanceof TransitionCancelledError
@@ -2129,6 +2306,8 @@ export function RouteveilProvider({
           phases.enter,
           (animation) => run.animations.add(animation),
         )
+
+        startIncomingAnimations()
 
         if (keepSharedSessionThroughEnter && sharedSession) {
           sharedSession.revealViews()
@@ -2246,6 +2425,7 @@ export function RouteveilProvider({
     resolvedTransitions,
     setRunPhase,
     stopVisualWork,
+    waitForIncomingReadiness,
     waitForSharedTargets,
   ])
 
@@ -2291,6 +2471,7 @@ export function RouteveilProvider({
       suppressIncomingView: false,
       acceptingPendingWork: false,
       pendingWork: new Set(),
+      preloadPromise: null,
     }
 
     activeRunRef.current = run
