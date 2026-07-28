@@ -2,6 +2,8 @@ import { RouteveilLink } from '../../../../react-router'
 import { overlayTransitions, pageTransitions } from '../../../data/transitions'
 import { Arrow, CodeBlock } from '../../../shared/UI'
 import { DocSection } from '../DocSection'
+import galleryThumbnail from '../../../../../public/gallery-card-thumbnail.png'
+import { ArrowUpRight } from 'lucide-react'
 
 const pageExample = `import { RouteveilLink } from 'routeveil/react-router'
 
@@ -148,6 +150,36 @@ export function TransitionDocs() {
         intro="Shared elements connect the same conceptual visual across two routes while composing with any Routeveil page transition."
         title="Shared Elements"
       >
+
+        <RouteveilLink
+          to="/lab/shared-elements"
+          style={{
+            marginTop: "-1rem"
+          }}
+          transition="tunnel"
+          transitionOptions={{
+            origin: "cursor",
+            color: "#f5f5f5"
+          }}
+          className="gallery-cta_container"
+        >
+          <div className="gallery-cta_container-info">
+            <h2>
+              Shared Elements Playground
+              <ArrowUpRight strokeWidth={3} />
+            </h2>
+
+            <span>
+              Try out the gallery playground, see how shared elements behave between
+              routes
+            </span>
+          </div>
+
+          <div className="gallery-cta_media">
+            <img src={galleryThumbnail} alt="Gallery thumbnail" />
+          </div>
+        </RouteveilLink>
+
         <CodeBlock filename="ProjectRoutes.tsx" language="tsx">{sharedElementExample}</CodeBlock>
         <p>
           Wrap the matching real element on both routes with
@@ -225,14 +257,6 @@ export function TransitionDocs() {
           <code> push</code>, and <code>pull</code>. Overlay transitions and same-page
           playback ignore shared registrations. Reduced motion skips cloning and
           movement while navigation continues normally.
-        </p>
-        <p>
-          <RouteveilLink
-            style={{ textDecoration: 'underline' }}
-            to="/lab/shared-elements"
-          >
-            Open the shared elements playground
-          </RouteveilLink>.
         </p>
         <div className="doc-note">
           <strong>Current limitations</strong>

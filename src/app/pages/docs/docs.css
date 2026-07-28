@@ -58,6 +58,174 @@
   animation: docs-content-enter 1s ease;
 }
 
+.gallery-cta_container {
+  display: flex;
+  justify-content: space-between;
+
+  width: 100%;
+  height: clamp(160px, 18vw, 225px);
+  overflow: hidden;
+
+  background-color: var(--background);
+  border: 1px solid #e6e6e6;
+  cursor: pointer;
+
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease;
+}
+
+.gallery-cta_container-info {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  padding: clamp(0.85rem, 2vw, 1.5rem);
+}
+
+.gallery-cta_container-info h2 {
+  width: fit-content;
+  max-width: 13ch;
+  margin: 0;
+
+  font-size: clamp(1.5rem, 2vw, 4rem);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.gallery-cta_container-info h2 svg {
+  display: inline-block;
+  width: 0.82em;
+  height: 0.82em;
+  margin-left: 0.12em;
+
+  vertical-align: -0.06em;
+  transform: translate(-0.04em, 0.04em);
+
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gallery-cta_container-info span {
+  display: block;
+  max-width: 30rem;
+
+  font-size: 16px;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  color: var(--muted);
+}
+
+.gallery-cta_media {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.gallery-cta_media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+  object-position: left;
+  mix-blend-mode: darken;
+
+  transform: translateX(0) scale(1);
+  transform-origin: center right;
+
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gallery-cta_container:hover {
+    background-color: #f5f5f5;
+  }
+
+  .gallery-cta_container:hover .gallery-cta_media img {
+    transform: translateX(25px) scale(1.08);
+  }
+
+  .gallery-cta_container:hover h2 svg {
+    transform: translate(0.04em, -0.04em);
+  }
+}
+
+@media (max-width: 1100px) {
+  .gallery-cta_container {
+    gap: 0.25rem;
+  }
+
+  .gallery-cta_container-info h2 {
+    max-width: 12ch;
+  }
+
+  .gallery-cta_container-info span {
+    max-width: 30ch;
+  }
+}
+
+@media (max-width: 650px) {
+  .gallery-cta_container {
+    grid-template-columns: minmax(0, 58%) minmax(0, 42%);
+    gap: 0.25rem;
+    height: 150px;
+  }
+
+  .gallery-cta_container-info {
+    padding: 0.85rem;
+  }
+
+  .gallery-cta_container-info h2 {
+    max-width: 12ch;
+    font-size: clamp(1.2rem, 1.75vw, 4rem);
+  }
+
+  .gallery-cta_container-info span {
+    max-width: 30ch;
+    font-size: 14px;
+  }
+
+  .gallery-cta_media {
+  max-width: 50%;
+  height: 100%;
+  overflow: hidden;
+}
+}
+
+@media (max-width: 420px) {
+  .gallery-cta_container {
+    grid-template-columns: minmax(0, 60%) minmax(0, 40%);
+    height: 155px;
+  }
+
+  .gallery-cta_container-info {
+    padding: 0.75rem;
+  }
+
+  .gallery-cta_container-info h2 {
+    font-size: clamp(1rem, 5vw, 1.15rem);
+  }
+
+  .gallery-cta_container-info span {
+    font-size: clamp(0.68rem, 3vw, 0.75rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-cta_container,
+  .gallery-cta_media img,
+  .gallery-cta_container-info h2 svg {
+    transition: none;
+  }
+}
+
 @keyframes docs-heading-enter {
   from {
     transform: translateY(110%);
@@ -297,14 +465,6 @@
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid #e6e6e6;
-  border-radius: 15px;
-}
-
-@supports (corner-shape: squircle) {
-  .prop-table-wrap {
-    border-radius: 35px;
-    corner-shape: squircle;
-  }
 }
 
 .prop-table {
@@ -348,11 +508,6 @@ th:last-child {
 .prop-table td {
   font-size: 14px;
   line-height: 1.5;
-}
-
-.prop-table-body code {
-  border-radius: 10px;
-  corner-shape: squircle;
 }
 
 .doc-inline-list {
@@ -473,14 +628,12 @@ th:last-child {
   padding: 0.35rem 0.5rem;
   overflow-wrap: anywhere;
   border: 1px solid #e6e6e6;
-  border-radius: 8px;
   background: #f5f5f5;
   color: #555;
   font-family: var(--font-mono);
   font-size: 0.68rem;
   line-height: 1.4;
   white-space: normal;
-  corner-shape: squircle;
 }
 
 
@@ -761,7 +914,6 @@ th:last-child {
     padding:
       0.75rem max(1rem, env(safe-area-inset-right)) calc(0.75rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
     border: 0;
-    border-radius: 0;
     background: #fff;
     color: #000;
     cursor: pointer;

@@ -2,6 +2,9 @@ import { CodeBlock } from '../../../shared/UI'
 import compatibility from '../../../data/compatibility.json'
 import { DocSection } from '../DocSection'
 import { LifecycleDiagram } from '../LifecycleDiagram'
+import { RouteveilLink } from '../../../../react-router'
+import galleryThumbnail from '../../../../../public/gallery-card-thumbnail.png'
+import { ArrowUpRight } from 'lucide-react'
 
 const installCommands = `npm install routeveil
 pnpm add routeveil
@@ -88,6 +91,35 @@ export function GettingStartedDocs() {
         intro="Routeveil is a transition layer for React Router that coordinates animation phases around individual navigation requests."
         title="Overview"
       >
+        <code style={{ width: "fit-content", textTransform: "uppercase" }}>New in v0.2.0</code>
+        <RouteveilLink
+          to="/lab/shared-elements"
+          style={{
+            marginTop: "-1rem"
+          }}
+          transition="tunnel"
+          transitionOptions={{
+            origin: "cursor",
+            color: "#f5f5f5"
+          }}
+          className="gallery-cta_container"
+        >
+          <div className="gallery-cta_container-info">
+            <h2>
+              Shared Elements Playground
+              <ArrowUpRight strokeWidth={3} />
+            </h2>
+
+            <span>
+              Try out the gallery playground, see how shared elements behave between
+              routes
+            </span>
+          </div>
+
+          <div className="gallery-cta_media">
+            <img src={galleryThumbnail} alt="Gallery thumbnail" />
+          </div>
+        </RouteveilLink>
         <p>
           Each transitioned navigation selects an effect. Routeveil waits for the
           outgoing page to exit or an overlay to cover the viewport, commits the
