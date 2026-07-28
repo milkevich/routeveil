@@ -21,7 +21,7 @@
 }
 
 .lab-hero__description-mask {
-  max-width: 730px;
+  max-width: 780px;
   margin-top: 2.5rem;
 }
 
@@ -153,7 +153,7 @@
   color: #000000;
   cursor: pointer;
   text-align: left;
-  transition: background-color 200ms ease, opacity 400ms ease;
+  transition: background-color 200ms ease, opacity 600ms ease;
 }
 
 .transition-card:hover:not(:disabled) {

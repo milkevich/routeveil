@@ -599,6 +599,7 @@ function GalleryPost({
 
   return (
     <RouteveilLink
+      preload="viewport"
       aria-label={post.title
         ? `View ${post.title}`
         : `View untitled post ${post.id}`}
@@ -610,6 +611,7 @@ function GalleryPost({
       scrollToSharedElement={`${post.id}-image`}
       to={`/lab/shared-elements/detail?post=${post.id}`}
       transition={transition}
+      sharedElements={`${post.id}-image`}
     >
       <RouteveilSharedElement name={`${post.id}-image`}>
         <img
@@ -768,6 +770,7 @@ function RouteB() {
       preventScrollReset: true,
       scrollToSharedElement: `${post.id}-image`,
       transition,
+      sharedElements: `${post.id}-image`
     })
   }
 
