@@ -49,6 +49,7 @@ function HeroCTA() {
     <div className="home-hero__footer">
       <div className="home-hero__actions">
         <ButtonLink
+          preload="viewport"
           style={{
             height: 42,
             paddingInline: 16,
@@ -66,6 +67,7 @@ function HeroCTA() {
             height: 42,
             paddingInline: 16,
           }}
+          preload="viewport"
           preventScrollReset
           to="/lab"
           transition="tunnel"

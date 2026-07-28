@@ -21,8 +21,8 @@
 .home-background__fallback {
   width: 100%;
   height: 100%;
-  background-image: radial-gradient(#d0d0d0 1px, transparent 1px);
-  background-size: 12px 12px;
+  background: radial-gradient(#d0d0d0 1px, transparent 1px);
+  background-size: 18px 18px;
 }
 
 .home-hero {

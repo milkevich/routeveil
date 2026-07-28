@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import gh from '../../../../public/gh.svg'
 import logo from '../../../../public/favicon.svg'
@@ -26,9 +26,32 @@ export function Header() {
   const location = useLocation()
   const activePath = resolvePrimaryPath(location.pathname)
   const navRef = useRef<HTMLElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
   const indicatorRef = useRef<HTMLSpanElement>(null)
   const linkRefs = useRef<Partial<Record<PrimaryPath, HTMLAnchorElement | null>>>({})
-  const [menuOpen, setMenuOpen] = useState(false)
+  const navigationToken = useMemo(
+    () => Symbol(
+      `${location.key}:${location.pathname}${location.search}${location.hash}`,
+    ),
+    [location.hash, location.key, location.pathname, location.search],
+  )
+  const [openNavigation, setOpenNavigation] = useState<symbol | null>(null)
+  const menuOpen = openNavigation === navigationToken
+
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const header = headerRef.current
+
+      if (header && !event.composedPath().includes(header)) {
+        setOpenNavigation(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    return () => document.removeEventListener('pointerdown', closeOnPointerDown)
+  }, [menuOpen])
 
   useLayoutEffect(() => {
     const nav = navRef.current
@@ -62,7 +85,10 @@ export function Header() {
   }, [activePath])
 
   return (
-    <header className={menuOpen ? 'site-header header-menu-opened' : 'site-header'}>
+    <header
+      ref={headerRef}
+      className={menuOpen ? 'site-header header-menu-opened' : 'site-header'}
+    >
       <div className="site-header__inner">
         <div className="site-header__identity">
           <RouteveilLink
@@ -70,7 +96,7 @@ export function Header() {
             className="site-brand"
             data-direction={routeDirection(location.pathname, '/')}
             to="/"
-            transition="bounce"
+            transition="push"
           >
             <img alt="Routeveil" src={logo} />
           </RouteveilLink>
@@ -78,6 +104,7 @@ export function Header() {
           <nav ref={navRef} aria-label="Primary navigation" className="primary-nav">
             {primaryNavigation.map((item) => (
               <RouteveilLink
+              sharedElements={false}
                 ref={(node) => {
                   linkRefs.current[item.path] = node
                 }}
@@ -123,7 +150,9 @@ export function Header() {
             aria-expanded={menuOpen}
             aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             className="menu-toggle__button"
-            onClick={() => setMenuOpen((open) => !open)}
+            onClick={() => setOpenNavigation((current) => (
+              current === navigationToken ? null : navigationToken
+            ))}
             type="button"
             variant="outlined"
           >
@@ -146,9 +175,9 @@ export function Header() {
             aria-current={activePath === item.path ? 'page' : undefined}
             data-direction={routeDirection(location.pathname, item.path)}
             key={item.path}
-            onClick={() => setMenuOpen(false)}
+            onClick={() => setOpenNavigation(null)}
             to={item.path}
-            transition="bounce"
+            transition="blur"
           >
             <span>{String(index + 1).padStart(2, '0')}</span>
             {item.label}
