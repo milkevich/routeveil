@@ -22,6 +22,15 @@ type SharedRect = {
   height: number
 }
 
+type CapturedVisualRegion =
+  | {
+      status: 'invalid'
+    }
+  | {
+      status: 'valid'
+      rect: SharedRect
+    }
+
 type StyleOwnership = {
   style: CSSStyleDeclaration
   property: string
@@ -185,6 +194,7 @@ type SourceEntry = {
   wrapper: HTMLElement
   sourceClone: Element
   snapshotElement: Element | null
+  snapshotOpacity: StyleOwnership | null
   cloneExclusions: CloneExclusionRecord[]
   sourceOpacity: StyleOwnership | null
   target: TargetEntry | null
@@ -441,6 +451,65 @@ function isUsableRect(rect: SharedRect): boolean {
     && rect.width > 0
     && rect.height > 0
   )
+}
+
+function intersectRects(
+  first: SharedRect,
+  second: SharedRect,
+): SharedRect | null {
+  const left = Math.max(first.left, second.left)
+  const top = Math.max(first.top, second.top)
+  const right = Math.min(
+    first.left + first.width,
+    second.left + second.width,
+  )
+  const bottom = Math.min(
+    first.top + first.height,
+    second.top + second.height,
+  )
+
+  if (right <= left || bottom <= top) {
+    return null
+  }
+
+  return {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  }
+}
+
+function getCapturedVisualRect(
+  document: Document,
+): CapturedVisualRegion {
+  const window = document.defaultView
+
+  if (!window) {
+    return { status: 'invalid' }
+  }
+
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+
+  if (
+    !Number.isFinite(viewportWidth)
+    || !Number.isFinite(viewportHeight)
+    || viewportWidth <= 0
+    || viewportHeight <= 0
+  ) {
+    return { status: 'invalid' }
+  }
+
+  return {
+    status: 'valid',
+    rect: {
+      left: 0,
+      top: 0,
+      width: viewportWidth,
+      height: viewportHeight,
+    },
+  }
 }
 
 function filterHasZeroOpacity(filter: string): boolean {
@@ -1458,6 +1527,46 @@ function getElementImages(element: Element): HTMLImageElement[] {
     : [...element.querySelectorAll<HTMLImageElement>('img')]
 }
 
+function getVisibleSnapshotImages(
+  snapshotElements: ReadonlyMap<Element, Element>,
+  capturedRegion: CapturedVisualRegion,
+): HTMLImageElement[] {
+  const images: HTMLImageElement[] = []
+
+  for (const [sourceElement, snapshotElement] of snapshotElements) {
+    if (
+      sourceElement.tagName.toLowerCase() !== 'img'
+      || snapshotElement.tagName.toLowerCase() !== 'img'
+    ) {
+      continue
+    }
+
+    if (capturedRegion.status === 'invalid') {
+      images.push(snapshotElement as HTMLImageElement)
+      continue
+    }
+
+    const capturedRect = capturedRegion.rect
+
+    try {
+      const sourceRect = copyRect(sourceElement.getBoundingClientRect())
+
+      if (
+        !intersectRects(sourceRect, capturedRect)
+        || !isVisuallyMeasurable(sourceElement, sourceRect)
+      ) {
+        continue
+      }
+    } catch {
+      continue
+    }
+
+    images.push(snapshotElement as HTMLImageElement)
+  }
+
+  return images
+}
+
 function waitForSharedFrame(
   document: Document,
   signal: AbortSignal,
@@ -1665,13 +1774,13 @@ function animationAffectsTargetVisual(animation: Animation): boolean {
     return false
   }
 
-  const timing = effect.getTiming()
-
-  if (timing.iterations === Infinity) {
-    return false
-  }
-
   try {
+    const timing = effect.getTiming()
+
+    if (timing.iterations === Infinity) {
+      return false
+    }
+
     return effect.getKeyframes().some((keyframe: ComputedKeyframe) => (
       Object.keys(keyframe).some((property) => (
         SHARED_TARGET_VISUAL_PROPERTIES.has(property)
@@ -1765,30 +1874,70 @@ function waitForTargetVisualStability(
   })
 }
 
-
 type DetachedSharedHandoff = {
   cancel: () => void
-  hold: () => void
+  retain: () => void
+  visualBoundary: Element
+}
+
+type FrozenSharedWrapper = {
+  name: string
+  rect: SharedRect
+  target: Element
+  targetRect: SharedRect
+  wrapper: HTMLElement
+}
+
+type DetachedSharedWrapper = {
+  name: string
+  target: Element
+  targetOffset: {
+    left: number
+    top: number
+  }
+  wrapper: HTMLElement
 }
 
 const detachedSharedHandoffs = new Set<DetachedSharedHandoff>()
 
-function clearDetachedSharedHandoffs(
-  handoffs: Iterable<DetachedSharedHandoff> = detachedSharedHandoffs,
+export function clearSharedElementHandoffs(
+  visualBoundary?: Element,
 ): void {
-  for (const handoff of [...handoffs]) {
+  for (const handoff of [...detachedSharedHandoffs]) {
+    if (
+      visualBoundary
+      && handoff.visualBoundary !== visualBoundary
+    ) {
+      continue
+    }
+
     handoff.cancel()
   }
 }
 
-function holdDetachedSharedHandoffs(): Set<DetachedSharedHandoff> {
-  const held = new Set(detachedSharedHandoffs)
+export function captureSharedElementHandoffs(
+  visualBoundary: Element,
+): () => void {
+  const captured = [...detachedSharedHandoffs].filter(
+    (handoff) => handoff.visualBoundary === visualBoundary,
+  )
+  let cleared = false
 
-  for (const handoff of held) {
-    handoff.hold()
+  for (const handoff of captured) {
+    handoff.retain()
   }
 
-  return held
+  return () => {
+    if (cleared) {
+      return
+    }
+
+    cleared = true
+
+    for (const handoff of captured) {
+      handoff.cancel()
+    }
+  }
 }
 
 function createDetachedHandoffRoot(
@@ -1802,10 +1951,14 @@ function createDetachedHandoffRoot(
   root.inert = true
   root.style.setProperty('all', 'initial')
   root.style.setProperty('display', 'block', 'important')
-  root.style.setProperty('position', 'fixed', 'important')
-  root.style.setProperty('inset', '0', 'important')
-  root.style.setProperty('width', 'auto', 'important')
-  root.style.setProperty('height', 'auto', 'important')
+  root.style.setProperty('position', 'absolute', 'important')
+  root.style.setProperty('inset', 'auto', 'important')
+  root.style.setProperty('left', '0', 'important')
+  root.style.setProperty('top', '0', 'important')
+  root.style.setProperty('right', 'auto', 'important')
+  root.style.setProperty('bottom', 'auto', 'important')
+  root.style.setProperty('width', '0', 'important')
+  root.style.setProperty('height', '0', 'important')
   root.style.setProperty('padding', '0', 'important')
   root.style.setProperty('margin', '0', 'important')
   root.style.setProperty('border', '0', 'important')
@@ -1814,9 +1967,9 @@ function createDetachedHandoffRoot(
   root.style.setProperty('visibility', 'visible', 'important')
   root.style.setProperty('transform', 'none', 'important')
   root.style.setProperty('filter', 'none', 'important')
-  root.style.setProperty('overflow', 'hidden', 'important')
+  root.style.setProperty('overflow', 'visible', 'important')
   root.style.setProperty('pointer-events', 'none', 'important')
-  root.style.setProperty('contain', 'layout style paint', 'important')
+  root.style.setProperty('contain', 'layout style', 'important')
   root.style.setProperty(
     'z-index',
     document.defaultView?.getComputedStyle(portalRoot).zIndex || 'auto',
@@ -1837,7 +1990,7 @@ function createDetachedHandoffRoot(
   return root
 }
 
-function freezeWrapperAtTarget(source: SourceEntry): HTMLElement | null {
+function freezeWrapperAtTarget(source: SourceEntry): FrozenSharedWrapper | null {
   const target = source.target
 
   if (!target || !source.wrapper.isConnected) {
@@ -1845,9 +1998,11 @@ function freezeWrapperAtTarget(source: SourceEntry): HTMLElement | null {
   }
 
   let rect: SharedRect
+  let targetRect: SharedRect
 
   try {
     rect = copyRect(source.wrapper.getBoundingClientRect())
+    targetRect = copyRect(target.registration.element.getBoundingClientRect())
   } catch {
     return null
   }
@@ -1897,32 +2052,129 @@ function freezeWrapperAtTarget(source: SourceEntry): HTMLElement | null {
   try {
     cancelAnimations(source.wrapper.getAnimations({ subtree: true }))
   } catch {
-    return source.wrapper
+    return {
+      name: source.registration.name,
+      rect,
+      target: target.registration.element,
+      targetRect,
+      wrapper: source.wrapper,
+    }
   }
 
-  return source.wrapper
+  return {
+    name: source.registration.name,
+    rect,
+    target: target.registration.element,
+    targetRect,
+    wrapper: source.wrapper,
+  }
+}
+
+function anchorFrozenWrapper(
+  root: HTMLElement,
+  frozen: FrozenSharedWrapper,
+): DetachedSharedWrapper | null {
+  let rootRect: SharedRect
+
+  try {
+    rootRect = copyRect(root.getBoundingClientRect())
+  } catch {
+    return null
+  }
+
+  root.append(frozen.wrapper)
+  frozen.wrapper.style.setProperty('position', 'absolute', 'important')
+  frozen.wrapper.style.setProperty(
+    'left',
+    `${String(frozen.rect.left - rootRect.left)}px`,
+    'important',
+  )
+  frozen.wrapper.style.setProperty(
+    'top',
+    `${String(frozen.rect.top - rootRect.top)}px`,
+    'important',
+  )
+
+  return {
+    name: frozen.name,
+    target: frozen.target,
+    targetOffset: {
+      left: frozen.rect.left - frozen.targetRect.left,
+      top: frozen.rect.top - frozen.targetRect.top,
+    },
+    wrapper: frozen.wrapper,
+  }
+}
+
+function alignDetachedSharedWrappers(
+  root: HTMLElement,
+  entries: readonly DetachedSharedWrapper[],
+): void {
+  let rootRect: SharedRect
+
+  try {
+    rootRect = copyRect(root.getBoundingClientRect())
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
+    if (
+      !root.contains(entry.wrapper)
+      || !entry.wrapper.isConnected
+      || !entry.target.isConnected
+    ) {
+      continue
+    }
+
+    try {
+      const targetRect = copyRect(entry.target.getBoundingClientRect())
+      entry.wrapper.style.setProperty(
+        'left',
+        `${String(
+          targetRect.left + entry.targetOffset.left - rootRect.left
+        )}px`,
+        'important',
+      )
+      entry.wrapper.style.setProperty(
+        'top',
+        `${String(
+          targetRect.top + entry.targetOffset.top - rootRect.top
+        )}px`,
+        'important',
+      )
+    } catch {
+      continue
+    }
+  }
 }
 
 function scheduleDetachedSharedHandoff(
   root: HTMLElement,
-  wrappers: readonly HTMLElement[],
-  targetElements: readonly Element[],
+  entries: readonly DetachedSharedWrapper[],
   visualBoundary: Element,
 ): void {
   const document = root.ownerDocument
   const view = document.defaultView
+  const targetElements = entries.map((entry) => entry.target)
   const controller = new AbortController()
   const fadeAnimations = new Set<Animation>()
   let observer: MutationObserver | null = null
   let disposed = false
-  let held = false
+  let retained = false
 
   const removeLifecycleListeners = () => {
     observer?.disconnect()
     observer = null
-    view?.removeEventListener('resize', handoff.cancel)
-    view?.removeEventListener('orientationchange', handoff.cancel)
-    view?.removeEventListener('scroll', handoff.cancel, true)
+    view?.removeEventListener('resize', finish)
+    view?.removeEventListener('orientationchange', finish)
+    view?.removeEventListener('scroll', align, true)
+  }
+  const align = () => alignDetachedSharedWrappers(root, entries)
+  const finish = () => {
+    if (!retained) {
+      handoff.cancel()
+    }
   }
 
   const handoff: DetachedSharedHandoff = {
@@ -1939,40 +2191,32 @@ function scheduleDetachedSharedHandoff(
       root.remove()
       detachedSharedHandoffs.delete(handoff)
     },
-    hold: () => {
-      if (disposed || held) {
+    retain: () => {
+      if (disposed || retained) {
         return
       }
 
-      held = true
+      retained = true
       controller.abort()
-      removeLifecycleListeners()
       cancelAnimations([...fadeAnimations])
       fadeAnimations.clear()
 
-      for (const wrapper of wrappers) {
-        if (wrapper.isConnected) {
-          wrapper.style.setProperty('opacity', '1', 'important')
-        }
+      for (const { wrapper } of entries) {
+        wrapper.style.setProperty('opacity', '1', 'important')
       }
     },
+    visualBoundary,
   }
 
   detachedSharedHandoffs.add(handoff)
-  view?.addEventListener('resize', handoff.cancel, { once: true })
-  view?.addEventListener('orientationchange', handoff.cancel, { once: true })
-  view?.addEventListener('scroll', handoff.cancel, {
-    capture: true,
-    once: true,
-  })
+  view?.addEventListener('resize', finish, { once: true })
+  view?.addEventListener('orientationchange', finish, { once: true })
+  view?.addEventListener('scroll', align, true)
 
   if (typeof MutationObserver !== 'undefined') {
     observer = new MutationObserver(() => {
-      if (
-        !held
-        && targetElements.every((element) => !element.isConnected)
-      ) {
-        handoff.cancel()
+      if (targetElements.every((element) => !element.isConnected)) {
+        finish()
       }
     })
     observer.observe(document.documentElement, {
@@ -1990,8 +2234,7 @@ function scheduleDetachedSharedHandoff(
       )
 
       if (
-        held
-        || controller.signal.aborted
+        controller.signal.aborted
         || targetElements.every((element) => !element.isConnected)
       ) {
         return
@@ -2001,7 +2244,7 @@ function scheduleDetachedSharedHandoff(
         return
       }
 
-      for (const wrapper of wrappers) {
+      for (const { wrapper } of entries) {
         if (!wrapper.isConnected) {
           continue
         }
@@ -2037,9 +2280,7 @@ function scheduleDetachedSharedHandoff(
         await waitForSharedPaint(document, controller.signal, 1)
       }
     } finally {
-      if (!held) {
-        handoff.cancel()
-      }
+      finish()
     }
   })()
 }
@@ -2589,10 +2830,9 @@ export class SharedElementSession {
   private readonly sources: SourceEntry[]
   private readonly visualBoundary: Element
   private readonly snapshotWrapper: HTMLElement
-  private readonly snapshotClone: Element
+  private readonly snapshotReadinessElements: readonly Element[]
   private readonly viewOpacity = new Map<HTMLElement, StyleOwnership>()
   private readonly sessionAnimations = new Set<Animation>()
-  private readonly previousDetachedHandoffs: Set<DetachedSharedHandoff>
   private releaseFixedTracking: (() => void) | null = null
   private sourceHandoffFrozen = false
   private activated = false
@@ -2606,15 +2846,15 @@ export class SharedElementSession {
     snapshotWrapper: HTMLElement,
     snapshotClone: Element,
     targetCutoff: number,
-    previousDetachedHandoffs: Set<DetachedSharedHandoff>,
+    snapshotReadinessElements?: readonly Element[],
   ) {
     this.root = root
     this.sources = sources
     this.visualBoundary = visualBoundary
     this.snapshotWrapper = snapshotWrapper
-    this.snapshotClone = snapshotClone
+    this.snapshotReadinessElements = snapshotReadinessElements
+      ?? [snapshotClone]
     this.targetCutoff = targetCutoff
-    this.previousDetachedHandoffs = previousDetachedHandoffs
     this.names = sources.map((source) => source.registration.name)
     const view = root.ownerDocument.defaultView
 
@@ -2642,7 +2882,7 @@ export class SharedElementSession {
 
     const ready = await waitForElementsPaintReady(
       [
-        this.snapshotClone,
+        ...this.snapshotReadinessElements,
         ...this.sources.map((source) => source.sourceClone),
       ],
       signal,
@@ -2659,8 +2899,9 @@ export class SharedElementSession {
 
     this.snapshotWrapper.style.setProperty('opacity', '1')
     this.suppressView(view)
+    this.stageSourceCoverage()
 
-    if (!await waitForSharedPaint(this.root.ownerDocument, signal, 1)) {
+    if (!await waitForSharedPaint(this.root.ownerDocument, signal, 2)) {
       return false
     }
 
@@ -2878,16 +3119,17 @@ export class SharedElementSession {
       updateCloneExclusions(source.cloneExclusions, matchedSourceTokens)
 
       if (!matchedSet.has(source.registration.name)) {
+        if (source.snapshotOpacity) {
+          restoreStyle(source.snapshotOpacity)
+          source.snapshotOpacity = null
+        }
+
         source.wrapper.remove()
         continue
       }
 
       if (source.snapshotElement && isSupportedElement(source.snapshotElement)) {
-        source.snapshotElement.style.setProperty(
-          'visibility',
-          'hidden',
-          'important',
-        )
+        source.snapshotOpacity ??= ownOpacity(source.snapshotElement)
       }
 
       source.wrapper.style.setProperty('opacity', '1', 'important')
@@ -2924,17 +3166,13 @@ export class SharedElementSession {
       && await waitForSharedPaint(this.root.ownerDocument, signal)
     )
 
-    if (ready) {
-      clearDetachedSharedHandoffs(this.previousDetachedHandoffs)
-      this.previousDetachedHandoffs.clear()
-    }
-
     return ready
   }
 
   async animate(
     signal: AbortSignal,
     onAnimation: (animation: Animation) => void,
+    startDelay = 0,
   ): Promise<boolean> {
     if (signal.aborted) {
       return false
@@ -2968,6 +3206,7 @@ export class SharedElementSession {
             borderRadius: target.borderRadius,
           },
         ], {
+          delay: startDelay,
           duration: SHARED_DURATION_MS,
           easing: SHARED_EASING,
           fill: 'forwards',
@@ -2993,6 +3232,7 @@ export class SharedElementSession {
             { ...source.frameStyle },
             { ...target.frameStyle },
           ], {
+            delay: startDelay,
             duration: SHARED_DURATION_MS,
             easing: SHARED_EASING,
             fill: 'forwards',
@@ -3012,6 +3252,7 @@ export class SharedElementSession {
               { ...morph.source },
               { ...morph.target },
             ], {
+              delay: startDelay,
               duration: SHARED_DURATION_MS,
               easing: SHARED_EASING,
               fill: 'forwards',
@@ -3046,6 +3287,7 @@ export class SharedElementSession {
               offset: 1,
             },
           ], {
+            delay: startDelay,
             duration: SHARED_DURATION_MS,
             easing: SHARED_EASING,
             fill: 'forwards',
@@ -3069,6 +3311,7 @@ export class SharedElementSession {
               offset: 1,
             },
           ], {
+            delay: startDelay,
             duration: SHARED_DURATION_MS,
             easing: SHARED_EASING,
             fill: 'forwards',
@@ -3168,6 +3411,7 @@ export class SharedElementSession {
       return
     }
 
+    this.releaseFixedTracking?.()
     const targetElements = this.sources.flatMap((source) => (
       source.target ? [source.target.registration.element] : []
     ))
@@ -3182,25 +3426,25 @@ export class SharedElementSession {
       this.root,
       this.visualBoundary,
     )
-    const detachedWrappers = detachedRoot
+    const detachedEntries = detachedRoot
       ? this.sources.flatMap((source) => {
-          const wrapper = freezeWrapperAtTarget(source)
+          const frozen = freezeWrapperAtTarget(source)
 
-          if (!wrapper) {
+          if (!frozen) {
             return []
           }
 
-          detachedRoot.append(wrapper)
-          return [wrapper]
+          const entry = anchorFrozenWrapper(detachedRoot, frozen)
+
+          return entry ? [entry] : []
         })
       : []
 
-    if (detachedRoot && detachedWrappers.length > 0) {
+    if (detachedRoot && detachedEntries.length > 0) {
       this.revealTargets()
       scheduleDetachedSharedHandoff(
         detachedRoot,
-        detachedWrappers,
-        targetElements,
+        detachedEntries,
         this.visualBoundary,
       )
       await waitForSharedPaint(this.root.ownerDocument, signal, 1)
@@ -3303,6 +3547,16 @@ export class SharedElementSession {
       } catch {
         continue
       }
+    }
+  }
+
+  private stageSourceCoverage(): void {
+    for (const source of this.sources) {
+      if (source.snapshotElement && isSupportedElement(source.snapshotElement)) {
+        source.snapshotOpacity ??= ownOpacity(source.snapshotElement)
+      }
+
+      source.wrapper.style.setProperty('opacity', '1', 'important')
     }
   }
 
@@ -3526,8 +3780,6 @@ export class SharedElementSession {
     }
 
     this.cleaned = true
-    clearDetachedSharedHandoffs(this.previousDetachedHandoffs)
-    this.previousDetachedHandoffs.clear()
     this.releaseFixedTracking?.()
     cancelAnimations([...this.sessionAnimations])
     this.sessionAnimations.clear()
@@ -3692,6 +3944,7 @@ export function createSharedElementSession(
       wrapper,
       sourceClone: clone,
       snapshotElement: snapshotElements.get(registration.element) ?? null,
+      snapshotOpacity: null,
       cloneExclusions,
     }
   })
@@ -3700,6 +3953,10 @@ export function createSharedElementSession(
     return null
   }
 
+  const snapshotReadinessElements = getVisibleSnapshotImages(
+    snapshotElements,
+    getCapturedVisualRect(ownerDocument),
+  )
   const sources: SourceEntry[] = []
 
   try {
@@ -3738,8 +3995,6 @@ export function createSharedElementSession(
       })
     }
 
-    const previousDetachedHandoffs = holdDetachedSharedHandoffs()
-
     return new SharedElementSession(
       root,
       sources,
@@ -3747,7 +4002,7 @@ export function createSharedElementSession(
       snapshotWrapper,
       snapshotClone,
       targetCutoff,
-      previousDetachedHandoffs,
+      snapshotReadinessElements,
     )
   } catch {
     for (const source of sources) {

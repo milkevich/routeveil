@@ -42,6 +42,8 @@ import {
   warnOnce,
 } from './warnings.js'
 import {
+  captureSharedElementHandoffs,
+  clearSharedElementHandoffs,
   createSharedElementSession,
   resolveSharedElementScrollTarget,
   selectSharedElementRegistrations,
@@ -115,6 +117,7 @@ type TransitionRun = {
   acceptingPendingWork: boolean
   pendingWork: Set<Promise<void>>
   preloadPromise: Promise<void> | null
+  previousSharedHandoffsCleanup: () => void
 }
 
 type LocationWaiter = {
@@ -158,6 +161,7 @@ const READINESS_WATCHDOG_MS = 10_000
 const SHARED_TARGET_WATCHDOG_MS = 600
 const SHARED_TARGET_POLL_MS = 50
 const SHARED_SCROLL_WATCHDOG_MS = 1_200
+const SHARED_EXIT_LEAD_MS = 150
 const SHARED_SCROLL_STABILIZATION_FRAMES = 6
 const SHARED_SCROLL_STABLE_FRAMES = 2
 const HISTORY_CHANGE_EVENT = 'routeveil:historychange'
@@ -569,12 +573,19 @@ function resetOverlay(run: TransitionRun): void {
   }
 }
 
+function releasePreviousSharedHandoffs(run: TransitionRun): void {
+  const cleanup = run.previousSharedHandoffsCleanup
+  run.previousSharedHandoffsCleanup = () => undefined
+  cleanup()
+}
+
 function releaseRunWork(run: TransitionRun): void {
   if (run.workReleased) {
     return
   }
 
   run.workReleased = true
+  releasePreviousSharedHandoffs(run)
 
   if (!run.controller.signal.aborted) {
     run.controller.abort()
@@ -863,6 +874,7 @@ export function RouteveilProvider({
   const [phase, setPhase] = useState<RouteveilPhase>('idle')
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay | null>(null)
   const viewRef = useRef<HTMLElement | null>(null)
+  const sharedHandoffBoundaryRef = useRef<Element | null>(null)
   const observedLocationRef = useRef(getLocationSnapshot(location))
   const locationWaitersRef = useRef<LocationWaiter[]>([])
   const activePromiseRef = useRef<Promise<void> | null>(null)
@@ -1458,6 +1470,13 @@ export function RouteveilProvider({
 
     return () => {
       mountedRef.current = false
+      const sharedHandoffBoundary = sharedHandoffBoundaryRef.current
+
+      if (sharedHandoffBoundary) {
+        clearSharedElementHandoffs(sharedHandoffBoundary)
+      }
+
+      sharedHandoffBoundaryRef.current = null
       const run = activeRunRef.current
 
       if (run) {
@@ -1489,6 +1508,7 @@ export function RouteveilProvider({
       }
 
       viewRef.current = element
+      sharedHandoffBoundaryRef.current = element.parentElement
       const run = activeRunRef.current
 
       if (
@@ -1794,6 +1814,7 @@ export function RouteveilProvider({
           `unknown-transition:${request.transition}`,
           `Routeveil: Unknown transition “${request.transition}”. Navigation continued without animation.`,
         )
+        releasePreviousSharedHandoffs(run)
         setRunPhase(run, 'navigating')
         await commitOnce(run)
         assertRunCurrent(run)
@@ -1801,6 +1822,7 @@ export function RouteveilProvider({
       }
 
       if (prefersReducedMotion()) {
+        releasePreviousSharedHandoffs(run)
         setRunPhase(run, 'navigating')
         await commitOnce(run, true, definition.type === 'page')
         assertRunCurrent(run)
@@ -1815,6 +1837,7 @@ export function RouteveilProvider({
             `missing-view:${request.transition}`,
             `Routeveil: The “${request.transition}” page transition requires a <RouteveilView>. Navigation continued without animation.`,
           )
+          releasePreviousSharedHandoffs(run)
           setRunPhase(run, 'navigating')
           await commitOnce(run, true, true)
           assertRunCurrent(run)
@@ -1932,6 +1955,8 @@ export function RouteveilProvider({
 
           if (!activated) {
             cleanupSharedSession()
+          } else {
+            releasePreviousSharedHandoffs(run)
           }
         }
 
@@ -1953,6 +1978,7 @@ export function RouteveilProvider({
             outgoingBackground.cleanup()
             removeOutgoingBackgroundCleanup()
             pauseIncomingAnimations()
+            releasePreviousSharedHandoffs(run)
             setRunPhase(run, 'navigating')
             await commitOnce(run, true, true)
             assertRunCurrent(run)
@@ -1969,6 +1995,7 @@ export function RouteveilProvider({
             run,
             releaseOutgoingView,
           )
+          releasePreviousSharedHandoffs(run)
           const exitPromise = waitForTask(
             run,
             Promise.all([
@@ -2221,29 +2248,11 @@ export function RouteveilProvider({
           )
         }
 
-        const exitAnimation = await waitForTask(
-          run,
-          animatePhase(
-            sharedSession.getExitElement(),
-            phases.exit,
-            (animation) => run.animations.add(animation),
-          ),
-          ANIMATION_WATCHDOG_MS,
-          new TransitionLifecycleError(
-            'animation-timeout',
-            'Routeveil page exit animation did not settle.',
-          ),
-          () => cancelAnimations([...run.animations]),
-        )
-        assertRunCurrent(run)
-        sharedSession.removeSnapshot()
-        cancelAnimation(exitAnimation)
-        setRunPhase(run, 'navigating')
-
         let keepSharedSessionThroughEnter = false
+        let movementReady = false
 
         if (preparation.matchedNames.length > 0) {
-          const movementReady = await sharedSession.prepareMovement(
+          movementReady = await sharedSession.prepareMovement(
             run.controller.signal,
           )
           assertRunCurrent(run)
@@ -2253,27 +2262,47 @@ export function RouteveilProvider({
               'shared-element-paint-readiness-failed',
               'Routeveil: Shared-element media did not become paint-ready. The incoming page was safely restored and continued its normal enter transition.',
             )
-          } else {
-            try {
-              await waitForTask(
-                run,
-                sharedSession.animate(
-                  run.controller.signal,
-                  (animation) => {
-                    run.animations.add(animation)
-                    sharedAnimations.add(animation)
-                  },
-                ),
-                ANIMATION_WATCHDOG_MS,
-                new TransitionLifecycleError(
-                  'animation-timeout',
-                  'Routeveil shared-element movement did not settle.',
-                ),
-                () => sharedSession?.cleanup(),
-              )
-              assertRunCurrent(run)
-              keepSharedSessionThroughEnter = true
-            } catch (error) {
+          }
+        }
+
+        const activeSharedSession = sharedSession
+        const exitTask = waitForTask(
+          run,
+          animatePhase(
+            activeSharedSession.getExitElement(),
+            phases.exit,
+            (animation) => run.animations.add(animation),
+          ),
+          ANIMATION_WATCHDOG_MS,
+          new TransitionLifecycleError(
+            'animation-timeout',
+            'Routeveil page exit animation did not settle.',
+          ),
+          () => cancelAnimations([...run.animations]),
+        ).then((animation) => {
+          assertRunCurrent(run)
+          activeSharedSession.removeSnapshot()
+          cancelAnimation(animation)
+          setRunPhase(run, 'navigating')
+        })
+        const movementTask = movementReady
+          ? waitForTask(
+              run,
+              activeSharedSession.animate(
+                run.controller.signal,
+                (animation) => {
+                  run.animations.add(animation)
+                  sharedAnimations.add(animation)
+                },
+                SHARED_EXIT_LEAD_MS,
+              ),
+              ANIMATION_WATCHDOG_MS,
+              new TransitionLifecycleError(
+                'animation-timeout',
+                'Routeveil shared-element movement did not settle.',
+              ),
+              () => cancelAnimations([...sharedAnimations]),
+            ).then(() => true).catch((error: unknown) => {
               if (
                 error instanceof TransitionCancelledError
                 || run.controller.signal.aborted
@@ -2285,9 +2314,16 @@ export function RouteveilProvider({
                 'shared-element-movement-failed',
                 'Routeveil: Shared-element movement could not finish. The incoming page was safely restored and continued its normal enter transition.',
               )
-            }
-          }
-        }
+              return false
+            })
+          : Promise.resolve(false)
+
+        const [, movementCompleted] = await Promise.all([
+          exitTask,
+          movementTask,
+        ])
+        assertRunCurrent(run)
+        keepSharedSessionThroughEnter = movementCompleted
 
         for (const animation of sharedAnimations) {
           run.animations.delete(animation)
@@ -2371,6 +2407,7 @@ export function RouteveilProvider({
         await Promise.resolve()
         assertRunCurrent(run)
 
+        releasePreviousSharedHandoffs(run)
         setRunPhase(run, 'navigating')
         await commitOnce(run)
         assertRunCurrent(run)
@@ -2398,6 +2435,7 @@ export function RouteveilProvider({
 
       reportTransitionError(request, error)
       stopVisualWork(run)
+      releasePreviousSharedHandoffs(run)
 
       if (run.commitState === 'pending' && isRunCurrent(run)) {
         try {
@@ -2442,6 +2480,11 @@ export function RouteveilProvider({
       return activePromise
     }
 
+    const sharedHandoffBoundary = sharedHandoffBoundaryRef.current
+    const previousSharedHandoffsCleanup = sharedHandoffBoundary
+      ? captureSharedElementHandoffs(sharedHandoffBoundary)
+      : () => undefined
+
     let settlePublicPromise!: () => void
     const publicPromise = new Promise<void>((resolve) => {
       settlePublicPromise = resolve
@@ -2472,6 +2515,7 @@ export function RouteveilProvider({
       acceptingPendingWork: false,
       pendingWork: new Set(),
       preloadPromise: null,
+      previousSharedHandoffsCleanup,
     }
 
     activeRunRef.current = run
