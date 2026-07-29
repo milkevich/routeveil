@@ -688,7 +688,7 @@ function RouteA() {
           pointerEvents: ready ? undefined : 'none',
           visibility: ready ? 'visible' : 'hidden',
           opacity: ready ? 1 : 0,
-          transition: "opacity 1s ease"
+          transition: "opacity 750ms ease-in"
         }}
       >
         {posts.map((post, index) => (
@@ -874,9 +874,9 @@ function SharedElementsRoute({
           </div>
         </header>
 
-        <div className="lab-workbench page-frame shared-elements-demo__workbench">
+        <div className="page-frame shared-elements-demo__workbench">
           <section className="lab-group">
-            <header className="lab-group__header">
+            <header className="lab-workbench lab-group__header">
               <div className="lab-group__title">
                 <span>{detail ? '02' : '01'}</span>
 
