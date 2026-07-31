@@ -1,6 +1,6 @@
 {
   "name": "routeveil",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Open-source React and TypeScript transition engine for React Router.",
   "keywords": [
