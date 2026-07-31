@@ -247,12 +247,15 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       || download !== undefined
       || reloadDocument
       || destination.external
-      || isCurrentLocation
     ) {
       return
     }
 
     event.preventDefault()
+
+    if (isCurrentLocation) {
+      return
+    }
 
     if (viewTransition) {
       warnOnce(

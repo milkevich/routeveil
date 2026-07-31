@@ -2623,11 +2623,29 @@ export function RouteveilProvider({
     const activePromise = activePromiseRef.current
 
     if (activePromise) {
-      warnOnce(
-        'transition-in-progress',
-        'Routeveil: A transition is already in progress. The additional navigation request was ignored and received the active transition promise.',
+      const activeRequest = activeRunRef.current?.request
+      const isDuplicateNavigation = Boolean(
+        activeRequest
+        && activeRequest.waitForLocationChange !== false
+        && request.waitForLocationChange !== false
+        && activeRequest.expectedPath === request.expectedPath,
       )
+
+      if (!isDuplicateNavigation) {
+        warnOnce(
+          'transition-in-progress',
+          'Routeveil: A transition is already in progress. The additional navigation request was ignored and received the active transition promise.',
+        )
+      }
+
       return activePromise
+    }
+
+    if (
+      request.waitForLocationChange !== false
+      && observedLocationRef.current.path === request.expectedPath
+    ) {
+      return Promise.resolve()
     }
 
     const sharedHandoffBoundary = sharedHandoffBoundaryRef.current
