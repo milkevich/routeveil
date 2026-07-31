@@ -106,7 +106,7 @@ const transitionCopy = {
   },
   clock: {
     description: 'A radial sector sweeps around the viewport.',
-    behavior: 'The sweep begins at the cursor or center and rotates through a full cover.',
+    behavior: 'The sweep begins from the configured origin and rotates through a full cover.',
     options: 'color, origin, direction, startAngle, duration, easing',
     previewOptions: { color: '#000000', origin: 'center', direction: 'clockwise' },
   },

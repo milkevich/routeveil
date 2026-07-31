@@ -1,29 +1,60 @@
 # Routeveil: complete AI-readable reference
 
-## Identity
+## Product identity
 
-Routeveil is an open-source React and TypeScript transition engine for React Router. It coordinates per-navigation page animations and full-screen overlay transitions around React Router navigation while keeping animation logic out of route components.
+Routeveil is an open-source React and TypeScript transition engine for React Router.
+It coordinates page animations, full-screen overlay effects, shared elements, route
+readiness, scroll, focus, and cleanup around individual navigation requests.
 
-Canonical public sources:
+Routeveil does not replace React Router. React Router owns routing, history, location,
+and route rendering. Routeveil owns the temporary visual lifecycle around an explicitly
+transitioned navigation.
+
+Canonical sources:
 
 - Website: https://www.routeveil.dev/
 - Documentation: https://www.routeveil.dev/docs
-- Interactive laboratory: https://www.routeveil.dev/lab
-- Shared elements playground: https://www.routeveil.dev/lab/shared-elements
-- Source repository: https://github.com/milkevich/routeveil
-- npm package: https://www.npmjs.com/package/routeveil
+- Interactive transition lab: https://www.routeveil.dev/lab
+- Shared-elements playground: https://www.routeveil.dev/lab/shared-elements
+- Source: https://github.com/milkevich/routeveil
+- npm: https://www.npmjs.com/package/routeveil
 
-The installable package name is `routeveil`. The public React Router import entry is `routeveil/react-router`. Do not use a scoped package name and do not import the package root as a runtime entry.
+The package name is `routeveil`. Import runtime APIs from
+`routeveil/react-router`. The package root is not a runtime entry point. Routeveil is
+licensed under the MIT License.
 
-Routeveil is licensed under the MIT License.
-
-## Installation
+## Installation and compatibility
 
 ```bash
 npm install routeveil
 ```
 
-Routeveil supports React `^18.0.0 || ^19.0.0`, React DOM `^18.0.0 || ^19.0.0`, and React Router DOM `^6.27.0 || ^7.0.0` as peer dependencies. It is distributed as an ES module and includes TypeScript declarations.
+Peer dependencies:
+
+- React: `^18.0.0 || ^19.0.0`
+- React DOM: `^18.0.0 || ^19.0.0`
+- React Router DOM: `^6.27.0 || ^7.0.0`
+
+React Router 5 and React Router 8 are not supported by the current adapter. TypeScript
+declarations are included. The library is distributed as an ES module.
+
+The packed-package verification matrix is:
+
+| React | React DOM | React Router DOM |
+| --- | --- | --- |
+| React 18.0.0 | React DOM 18.0.0 | React Router DOM 6.27.0 |
+| React 18.3.1 | React DOM 18.3.1 | React Router DOM 6.30.4 |
+| React 19.0.0 | React DOM 19.0.0 | React Router DOM 6.27.0 |
+| React 19.2.8 | React DOM 19.2.8 | React Router DOM 6.30.4 |
+| React 18.0.0 | React DOM 18.0.0 | React Router DOM 7.0.0 |
+| React 18.3.1 | React DOM 18.3.1 | React Router DOM 7.18.1 |
+| React 19.0.0 | React DOM 19.0.0 | React Router DOM 7.0.0 |
+| React 19.2.8 | React DOM 19.2.8 | React Router DOM 7.18.1 |
+| React 19.2.7 | React DOM 19.2.7 | React Router DOM 7.18.1 |
+
+Each fixture validates installation, dependency identity, public imports, TypeScript,
+runtime navigation, and a production build. React Router DOM versions below 6.27.0
+and untested combinations are unsupported.
 
 ```ts
 import {
@@ -32,144 +63,406 @@ import {
   RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
+  useRouteveilPendingWork,
   useRouteveilTransition,
 } from 'routeveil/react-router'
 ```
 
-## Compatibility
+## Minimal setup
 
-The following exact combinations pass isolated packed-package installation, public import and dependency identity checks, strict TypeScript compilation, focused runtime navigation tests, and a production Vite build:
+`RouteveilProvider` must render beneath React Router context. One active
+`RouteveilView` marks the route region animated by page transitions.
 
-- React 18.0.0, React DOM 18.0.0, React Router DOM 6.27.0.
-- React 18.3.1, React DOM 18.3.1, React Router DOM 6.30.4.
-- React 19.0.0, React DOM 19.0.0, React Router DOM 6.27.0.
-- React 19.2.8, React DOM 19.2.8, React Router DOM 6.30.4.
-- React 18.0.0, React DOM 18.0.0, React Router DOM 7.0.0.
-- React 18.3.1, React DOM 18.3.1, React Router DOM 7.18.1.
-- React 19.0.0, React DOM 19.0.0, React Router DOM 7.0.0.
-- React 19.2.8, React DOM 19.2.8, React Router DOM 7.18.1.
-- React 19.2.7, React DOM 19.2.7, React Router DOM 7.18.1, matching the repository lockfile.
+```tsx
+<BrowserRouter>
+  <RouteveilProvider>
+    <Header />
+    <RouteveilView>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+      </Routes>
+    </RouteveilView>
+  </RouteveilProvider>
+</BrowserRouter>
+```
 
-React Router 5 is unsupported. React Router 8 is unsupported by the current `routeveil/react-router` adapter. React Router DOM versions below 6.27.0 and untested combinations are unsupported. npm peer dependency warnings indicate that the consuming application is outside Routeveil's declared support range.
+Persistent UI stays mounted when placed outside `RouteveilView`. In a Data Router
+layout, an empty `RouteveilView` renders React Router's `Outlet`.
 
-React Router's `viewTransition` option is available throughout the supported Router range. `defaultShouldRevalidate` and `mask` remain available only when the installed React Router version exposes those options. TypeScript consumers require TypeScript 5.4 or newer, and React 18 TypeScript consumers need `@types/react` 18.2.6 or newer.
+## Unified transition input
 
-## Transition lifecycle
+`RouteveilLink`, `useRouteveilNavigate`, and `useRouteveilTransition` accept the
+same `RouteveilTransition` value.
 
-For a page transition, Routeveil animates the registered route view out, commits React Router navigation, waits for the new location to render and paint, animates the view in, and restores idle state. When valid shared elements are selected, a dedicated shared movement runs after the complete page exit and before the page enter. These phases never overlap.
+### Complete shorthand
 
-For an overlay transition, Routeveil covers the viewport, commits navigation only after the cover is opaque, waits for the new location, reveals the incoming route, and removes the overlay.
+```ts
+transition: 'fade'
+```
 
-Transitions are opt-in per navigation. Ordinary React Router links and navigation continue to work normally. Routeveil runs one transition request at a time.
+A page name uses both the definition's exit and enter phases. An overlay name uses its
+cover and reveal lifecycle.
 
-## Interrupted navigation
+### Configured complete transition
 
-Routeveil uses an ignore-while-active concurrency policy. One transition run and one transition promise may be active at a time. An additional `RouteveilLink`, `useRouteveilNavigate`, or `useRouteveilTransition` request receives the active promise. Its destination or playback request is ignored without queueing, committing another location, cancelling and restarting the run, or replacing the active request.
+```ts
+transition: {
+  name: 'slide',
+  direction: 'left',
+}
+```
 
-Browser Back and Forward, ordinary React Router navigation, plain links, and direct history manipulation are external location changes rather than additional Routeveil requests. Routeveil respects the latest external location and cancels visual work owned by the current run. When an external change occurs before Routeveil commits, the pending Routeveil destination is abandoned. When it occurs after the Routeveil commit, Routeveil does not commit again or restore an older location.
+Options are flattened beside `name`. There is no nested `options` property. The
+resolver receives the flattened options with the structural `name` field removed.
 
-During page transitions, `RouteveilView` is inert. Full-screen overlays block pointer interaction while active. Persistent interface outside `RouteveilView` may remain interactive, and external navigation can still occur through browser history or application code.
+Overlay configuration uses the same shape:
 
-After successful Routeveil navigation or an external route change, meaningful connected focus already moved by the application is preserved. Otherwise Routeveil focuses the incoming `RouteveilView` with `preventScroll`. It never restores focus to a disconnected outgoing trigger. Same-page playback restores prior focus when appropriate. A failed navigation that leaves the location unchanged restores prior focus when it remains valid and focus has not intentionally moved elsewhere.
+```ts
+transition: {
+  name: 'tunnel',
+  origin: 'cursor',
+  color: '#111111',
+}
+```
 
-Completed, failed, interrupted, and unmounted runs clean up their animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase. Stale runs cannot later navigate, move focus, scroll, or clear visual state owned by another run. Routeveil does not currently support cancellation and replacement, request queues, or last-request-wins concurrency.
+### Split page transition
 
-## Core components and hooks
+```ts
+transition: {
+  exit: 'fade',
+  enter: {
+    name: 'slide',
+    direction: 'up',
+  },
+}
+```
+
+`exit` and `enter` resolve independently. Routeveil uses only the selected
+definition's exit phase for `exit` and only its enter phase for `enter`. Options are
+not shared between phases.
+
+Each phase accepts a name or a configured object:
+
+```ts
+transition: {
+  exit: {
+    name: 'slide',
+    direction: 'left',
+  },
+  enter: {
+    name: 'slide',
+    direction: 'right',
+  },
+}
+```
+
+Split transitions accept page definitions only. Overlay names are invalid in
+`exit` and `enter`.
+
+At least one phase is required. An omitted phase is absent:
+
+```ts
+transition: { exit: 'fade' }
+transition: { enter: 'slide' }
+```
+
+Routeveil does not copy the other phase, choose a default, reuse an opposite phase, or
+create a zero-duration animation.
+
+### Runtime fallback
+
+Unknown names, invalid split overlay phases, and resolver errors do not trap the
+application. A valid split phase still runs when the other phase is invalid. If no
+valid phase remains, navigation completes without animation. Cleanup removes all
+Routeveil-owned snapshots, backgrounds, overlays, timers, animations, inert state,
+temporary attributes, and pending lifecycle state.
+
+## Page transition lifecycle
+
+The normal sequence is:
+
+1. prepare and animate the outgoing `RouteveilView`
+2. commit React Router navigation
+3. wait for the incoming location, browser paints, and registered pending work
+4. apply scroll and shared-element behavior
+5. animate the incoming `RouteveilView`
+6. restore visibility, interaction, focus, overflow, backgrounds, and idle state
+
+With no exit phase, Routeveil skips outgoing page animation and its related snapshot,
+retained-background animation, watchdog, and timer work. The current page remains
+visible while an unfinished preload settles, then navigation commits and the incoming
+readiness lifecycle continues.
+
+With no enter phase, Routeveil completes exit, navigation, readiness, scrolling, and
+shared-element work, then reveals the incoming route immediately and cleans up.
+
+A missing page phase does not disable shared-element movement.
+
+## Overlay transition lifecycle
+
+The sequence is:
+
+1. mount and prepare the overlay through a `document.body` portal
+2. cover the complete viewport
+3. commit navigation after the old screen is hidden
+4. wait for the incoming route
+5. reveal the destination
+6. reset and remove the overlay
+
+Configured overlay options are passed to the renderer. A clicked
+`RouteveilLink` supplies pointer coordinates. Keyboard and programmatic requests use
+the effect's center fallback unless `useRouteveilTransition` receives an explicit
+`clickPosition`.
+
+## Core components
 
 ### RouteveilProvider
 
-`RouteveilProvider` owns transition state, resolves built-in and custom transition definitions, coordinates navigation commits, respects reduced-motion preferences, and restores the application after a transition. It must render beneath React Router context.
+Owns the transition registry and lifecycle. Props:
+
+- `children: ReactNode`
+- `transitions?: Record<string, TransitionDefinition>`
+- `preload?: false | 'intent' | 'viewport' | 'render'`
+
+Built-ins are automatic. Custom definitions extend the registry. A custom definition
+with a built-in name replaces that built-in inside the provider.
+
+There is no provider-level default transition. Each request supplies
+`transition` or navigates normally.
 
 ### RouteveilView
 
-`RouteveilView` registers the routed content animated by page transitions. Persistent interface such as a header can remain outside this wrapper. With data routers, an empty `RouteveilView` renders React Router's `Outlet`; with declarative routes it can wrap explicit children.
+Registers the one stable routed wrapper animated by page effects. Props:
 
-### RouteveilSharedElement
+- `children?: ReactNode`, defaulting to `Outlet`
+- `className?: string`
+- `style?: CSSProperties`
 
-`RouteveilSharedElement` accepts only `name` and one React element child. It clones that child with an internal merged ref and does not add a layout wrapper. Intrinsic HTML and SVG children are supported. A custom component must forward its ref to one real DOM element. Names are trimmed, matched across routes by identity rather than tag, and must be unique within one active route view.
+The view becomes inert during page transitions and exposes Routeveil phase and busy
+state. Cleanup restores its previous state.
 
 ### RouteveilLink
 
-`RouteveilLink` extends React Router's link behavior with optional `transition`, `transitionOptions`, `smoothScrollToTop`, `scrollToSharedElement`, and `sharedElements` properties. It preserves native behavior for modified clicks, external links, downloads, non-self targets, reload-document links, and prevented events.
+Extends React Router's `Link`. Routeveil additions:
+
+- `transition?: RouteveilTransition`
+- `preload?: false | 'intent' | 'viewport' | 'render'`
+- `smoothScrollToTop?: boolean`
+- `scrollToSharedElement?: string`
+- `sharedElements?: 'auto' | 'all' | string | readonly string[] | false`
+
+Routeveil calls the consumer `onClick` first and respects `preventDefault`.
+External URLs, downloads, `reloadDocument`, non-self targets, modified clicks,
+non-primary clicks, prevented events, and same-location links preserve native behavior.
+A selected Routeveil transition owns the visual lifecycle instead of React Router's
+native `viewTransition` option.
+
+### RouteveilSharedElement
+
+Accepts `name: string` and one React element child. It adds no layout wrapper; it
+clones the child with a merged ref. Custom components must forward their ref to one HTML
+or SVG element. Names must be unique within one active route view.
+
+## Hooks
 
 ### useRouteveilNavigate
 
-`useRouteveilNavigate` performs programmatic transition-aware navigation. It accepts React Router navigation options plus Routeveil transition, scroll, and shared-element selection options. A transitioned request resolves after the complete visual lifecycle and cleanup.
+Performs programmatic transition-aware navigation. It accepts React Router
+`NavigateOptions` plus `transition`, `smoothScrollToTop`,
+`scrollToSharedElement`, and `sharedElements`.
+
+Its promise resolves after the visual lifecycle and cleanup. Without `transition`,
+or when pathname, search, and hash are unchanged, it delegates without a Routeveil
+animation.
 
 ### useRouteveilTransition
 
-`useRouteveilTransition` plays a real transition on the current route without changing the URL, history, route state, or scroll position.
+Plays a page or overlay transition on the current route without changing URL, history,
+location state, mounted route, or scroll. Its promise resolves after cleanup.
+
+The optional second argument is:
+
+```ts
+{
+  clickPosition?: {
+    x: number
+    y: number
+  }
+}
+```
+
+### useRouteveilPendingWork
+
+Returns a registrar for asynchronous incoming-route work:
+
+```ts
+const release = registerPendingWork(promise)
+```
+
+Register work during an active destination readiness window when an incoming visual
+must settle before enter or reveal. The returned function releases the task early,
+typically during effect cleanup. Rejection counts as settled. A safety timeout prevents
+indefinite blocking.
 
 ## Shared elements
 
-Shared elements compose with the existing page transition selected by `RouteveilLink` or `useRouteveilNavigate`; `shared` and `shared-element` are not transition names. Routeveil performs three distinct sequential phases:
+Shared elements compose with page transitions. They are not transition names.
 
-1. complete the normal page exit
-2. move every valid shared visual concurrently
-3. complete the normal page enter
+When a page exit exists, shared-element movement starts with a short lead and overlaps
+the exit. Page enter starts after both finish. Without an exit phase, movement finishes
+before page enter.
 
-The outgoing visual is captured in a fixed, non-interactive, aria-hidden body portal before the real source is hidden. The clone remains stationary above the outgoing page until exit completes. After Routeveil commits navigation and applies its existing scroll policy, it keeps the incoming view hidden, finds new registrations with matching names, measures their viewport geometry, and moves each wrapper to its target. When movement finishes, Routeveil reveals the incoming view and begins its enter phase beneath the settled clone while keeping the real target hidden. After enter completes, the real target takes over and the portal is removed.
+Source and destination wrappers connect by exact `name`, not tag or tree position.
+Routeveil moves a fixed, non-interactive visual clone; it does not move or replace
+application DOM. Same-tag visuals can interpolate supported styles. Different tags use
+geometry movement and a crossfade.
 
-For page-transition navigation, `scrollToSharedElement` can be supplied to `RouteveilLink` or `useRouteveilNavigate` with the exact name of an incoming `RouteveilSharedElement`. After the incoming route mounts and before Routeveil measures any shared endpoint, it instantly centers the named element on the viewport's Y axis while preserving the current X position. A URL hash takes precedence. A valid shared-element anchor overrides `preventScrollReset` and `smoothScrollToTop`. If the incoming name is missing, duplicated, or unmeasurable, Routeveil emits a warning and falls back to the request's existing scroll policy. Reduced motion skips shared cloning and movement but still applies valid anchor positioning.
+With `sharedElements='auto'`, a clicked link selects shared elements on, inside, or
+around its anchor. Programmatic requests use `scrollToSharedElement` as a source hint,
+then the sole available source when unambiguous. Use `all`, exact names, an array, or
+`false` for explicit selection.
 
-A clicked `RouteveilLink` selects registered elements that are the triggering anchor, inside that anchor, or contain that anchor. An unrelated link starts no shared-element session, so ordinary route navigation never waits for an incoming match. Programmatic navigation uses `scrollToSharedElement` as an exact outgoing source hint, then falls back only when the active view has one valid shared element. The `sharedElements` option accepts `auto`, `all`, an exact name, a readonly name array, or `false` for explicit control.
+Multiple unique names move concurrently. Missing, duplicate, or unmeasurable matches
+are skipped safely. Overlay transitions and same-page playback ignore shared
+registrations. Reduced motion skips clones and movement.
 
-Same names may connect different tags such as `img` to `video` or `span` to `div`. Same-tag visuals move and morph supported computed styles. Different tags use geometry movement plus a source-to-target visual crossfade; Routeveil does not morph semantic DOM nodes or move the real outgoing node into the incoming route. Multiple unique names move together. A missing or duplicate registration is skipped immediately. A registered target waits only while its image or geometry remains unready, up to the target-readiness deadline.
+## Route preloading
 
-Overlay transitions and same-page playback ignore shared registrations. Reduced motion performs normal navigation without shared clones or movement. Browser Back and Forward do not independently start sharing, but an external history change during an active shared run cancels its visual work, reveals connected targets and the incoming view, removes the portal, and leaves the latest location in control.
+Preloading applies to eligible internal transitioned `RouteveilLink` destinations:
 
-Current limitations require one DOM element per `RouteveilSharedElement`, ref-forwarding custom children, unique names, and stable mounted target layout. Temporary video clones are muted and do not preserve playback continuity. Canvas, iframe, WebGL, audio, and pseudo-element fidelity is limited. Shared elements do not run with overlay transitions.
+- `intent`: focus, pointer intent, press, or touch
+- `viewport`: link enters the viewport
+- `render`: link mounts
+- `false`: disabled
 
-## Built-in page transitions
+A link value overrides the provider default. Automatic discovery requires a Data Router
+such as `createBrowserRouter`; declarative `BrowserRouter` does not expose a route
+tree. Routeveil runs matching `route.lazy` functions and caches their promises. It
+does not render the destination, run component effects, or execute loaders.
 
-- `fade`: opacity crossfade.
-- `blur`: blur and opacity exit/entry.
-- `slide`: directional page shift.
-- `spin`: perspective wheel-like movement.
-- `rotate`: restrained two-dimensional turn.
-- `bounce`: soft depth movement.
-- `push`: outgoing page advances toward the viewer.
-- `pull`: incoming page is drawn forward.
+An active exit may overlap preloading. If there is no usable exit animation, Routeveil
+keeps the outgoing page visible while pending preload work settles. Failure or timeout
+continues navigation safely.
 
-## Built-in overlay transitions
+## Scroll precedence
 
-- `pixel`: square tile field.
-- `curtain`: two opposing closing panels.
-- `wipe`: one solid moving panel.
-- `columns`: sequenced vertical strips.
-- `rows`: sequenced horizontal strips.
-- `iris`: circular aperture.
-- `halo`: expanding solid circle.
-- `tunnel`: halo cover followed by iris reveal.
-- `clock`: radial sector sweep.
-- `venetian`: dimensional rotating blinds.
-- `mosaic`: seeded irregular tile field.
-- `dissolve`: procedural film-grain cover.
+For successful transitioned navigation:
 
-Transition-specific typed options include direction, duration, easing, color or colors, origin, grid dimensions, count, order, stagger, seed, and effect-specific geometry. The documentation at https://www.routeveil.dev/docs is authoritative for the options supported by each transition.
+1. URL hash target
+2. valid `scrollToSharedElement` destination
+3. `preventScrollReset`
+4. top reset, smooth when `smoothScrollToTop` is true and instant otherwise
+
+A shared-element anchor centers the target vertically and preserves horizontal scroll
+before shared endpoints are measured. Playback and cancelled runs do not scroll.
+
+## Interrupted navigation and concurrency
+
+Routeveil uses ignore-while-active concurrency. One run and one promise may be active.
+Another Routeveil link, navigation, or playback request receives the active promise;
+its requested destination is ignored without queueing or replacing the run.
+
+Back, Forward, ordinary React Router navigation, plain links, and direct history
+changes are external. The latest location wins. Routeveil abandons an uncommitted
+destination, cancels owned visual work, and never repeats a commit that already
+happened.
+
+Completed, failed, interrupted, timed-out, and unmounted runs clean up owned visual and
+lifecycle state. Stale runs cannot later navigate, focus, scroll, or clear state owned
+by another run.
+
+## Focus and accessibility
+
+`RouteveilView` is inert during page transitions. Full-screen overlays block pointer
+input. Meaningful connected focus moved by application code is preserved after
+navigation. Otherwise Routeveil focuses the incoming view with `preventScroll`.
+Disconnected outgoing triggers are never focused.
+
+Same-page playback and failed unchanged navigation restore prior focus only when it is
+still connected and application code has not moved focus elsewhere.
 
 ## Reduced motion
 
-Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is requested, it skips decorative phases and completes navigation normally. Links and hooks retain the same API and promise behavior.
+Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is
+requested, it skips page, overlay, and shared-element animation while preserving
+navigation, route readiness, scroll, focus, cleanup, and promise behavior.
 
-## Documentation sections
+## Built-in page transitions
+
+- `fade`: opacity crossfade
+- `blur`: blur and opacity
+- `slide`: directional page movement; option `direction`
+- `spin`: perspective rotation and movement; option `direction`
+- `rotate`: restrained two-dimensional turn; option `direction`
+- `bounce`: soft depth movement
+- `push`: outgoing page advances toward the viewer
+- `pull`: incoming page is drawn forward
+
+## Built-in overlay transitions
+
+- `pixel`: square tile field
+- `curtain`: two closing panels
+- `wipe`: one moving panel
+- `columns`: sequenced vertical strips
+- `rows`: sequenced horizontal strips
+- `iris`: circular aperture
+- `halo`: expanding solid circle
+- `tunnel`: halo cover with iris reveal
+- `clock`: radial sector sweep
+- `venetian`: dimensional rotating blinds
+- `mosaic`: seeded irregular tile field
+- `dissolve`: procedural film-grain cover
+
+Use the documentation and interactive lab for each overlay's exact option set.
+
+## TypeScript
+
+Important public types include:
+
+- `RouteveilTransition`
+- `TransitionConfig`
+- `PageTransitionInput`
+- `SplitTransition`
+- `TransitionName`
+- `TransitionOptionsFor<TName>`
+- `RouteveilLinkProps`
+- `RouteveilNavigateOptions`
+- `RouteveilProviderProps`
+- page, overlay, renderer, animation, option, direction, and origin definition types
+
+Keep built-in names literal to preserve transition-specific option inference. Custom
+names remain supported and custom resolver options are forwarded as flattened fields.
+
+## Current scope
+
+- Direct loads and refreshes do not animate
+- Standard React Router `Link` and `navigate` remain unanimated
+- Back and Forward remain native and do not independently start transitions
+- One active `RouteveilView` is supported per provider
+- Unknown transitions and missing views fall back to safe navigation
+- Concurrent Routeveil requests use ignore-while-active behavior
+- Next.js integration, cloned route trees, and the browser View Transitions API are not included
+
+## Documentation map
 
 - Overview: https://www.routeveil.dev/docs#overview
 - Installation: https://www.routeveil.dev/docs#installation
-- Compatibility: https://www.routeveil.dev/docs#compatibility
 - Quick Start: https://www.routeveil.dev/docs#quick-start
+- Compatibility: https://www.routeveil.dev/docs#compatibility
 - Provider: https://www.routeveil.dev/docs#provider
 - RouteveilLink: https://www.routeveil.dev/docs#routeveil-link
+- Route Preloading: https://www.routeveil.dev/docs#route-preloading
 - RouteveilView: https://www.routeveil.dev/docs#routeveil-view
 - Programmatic Navigation: https://www.routeveil.dev/docs#programmatic-navigation
+- Transition Playback: https://www.routeveil.dev/docs#transition-playback
+- Route Readiness: https://www.routeveil.dev/docs#route-readiness
 - Interrupted Navigation: https://www.routeveil.dev/docs#interrupted-navigation
 - Page Transitions: https://www.routeveil.dev/docs#page-transitions
 - Shared Elements: https://www.routeveil.dev/docs#shared-elements
-- Shared Elements Playground: https://www.routeveil.dev/lab/shared-elements
 - Overlay Transitions: https://www.routeveil.dev/docs#overlay-transitions
-- Transition Options: https://www.routeveil.dev/docs#transition-options
+- Configuring Transitions: https://www.routeveil.dev/docs#configuring-transitions
 - Reduced Motion: https://www.routeveil.dev/docs#reduced-motion
 
-## Source precedence
-
-For current package versions and distribution metadata, use npm. For source code and issue status, use GitHub. For public usage guidance and API examples, use the Routeveil documentation. The exact supported installation command is `npm install routeveil`.
+For versions and distribution metadata, prefer npm. For source and issues, prefer
+GitHub. For usage guidance, prefer the Routeveil documentation.
