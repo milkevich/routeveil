@@ -36,7 +36,11 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
   'routeveil-view':
     'Use RouteveilView to define the routed content animated by Routeveil while persistent interface stays mounted.',
   'programmatic-navigation':
-    'Navigate with transitions in code using Routeveil hooks, typed options, and scroll controls.',
+    'Navigate with transitions in code using useRouteveilNavigate, React Router options, and scroll controls.',
+  'transition-playback':
+    'Preview Routeveil page and overlay effects without changing the current React Router location.',
+  'route-readiness':
+    'Register incoming visual work that Routeveil should await before enter or reveal.',
   'interrupted-navigation':
     'Learn how Routeveil handles concurrent requests, browser history interruptions, focus, and deterministic transition cleanup.',
   'page-transitions':
@@ -45,7 +49,7 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Connect matching visuals across React Router routes with sequential page exit, shared movement, and page enter phases.',
   'overlay-transitions':
     'Explore Routeveil overlays including pixel, wipe, iris, halo, tunnel, clock, mosaic, and dissolve.',
-  'transition-options':
+  'configuring-transitions':
     'Configure Routeveil transition direction, duration, easing, colors, origins, grids, stagger, and other typed options.',
   'reduced-motion':
     'Learn how Routeveil respects reduced-motion preferences while completing React Router navigation safely.',

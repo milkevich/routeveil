@@ -5,6 +5,7 @@ import type {
   To,
 } from 'react-router-dom'
 import type {
+  BuiltInOverlayTransitionName,
   BuiltInTransitionName,
   ClickPosition,
   ClockOverlayOptions,
@@ -60,6 +61,150 @@ export type TransitionOptionsFor<
                             ? DissolveOverlayOptions
                             : unknown
 
+type TransitionConfigOptions<
+  TTransition extends TransitionName,
+> = TTransition extends BuiltInTransitionName
+  ? TransitionOptionsFor<TTransition>
+  : Readonly<Record<string, unknown>>
+
+export type TransitionConfig<
+  TTransition extends TransitionName = TransitionName,
+> = TTransition extends TransitionName
+  ? Readonly<{
+      name: TTransition
+      exit?: never
+      enter?: never
+    }> & TransitionConfigOptions<TTransition>
+  : never
+
+export type PageTransitionInput<
+  TTransition extends TransitionName = TransitionName,
+> = TTransition extends BuiltInOverlayTransitionName
+  ? never
+  : TTransition | TransitionConfig<TTransition>
+
+export type SplitTransition<
+  TTransition extends TransitionName = TransitionName,
+> =
+  | Readonly<{
+      exit: PageTransitionInput<TTransition>
+      enter?: PageTransitionInput<TTransition>
+      name?: never
+    }>
+  | Readonly<{
+      exit?: PageTransitionInput<TTransition>
+      enter: PageTransitionInput<TTransition>
+      name?: never
+    }>
+
+export type RouteveilTransition<
+  TTransition extends TransitionName = TransitionName,
+> =
+  | TTransition
+  | TransitionConfig<TTransition>
+  | SplitTransition<TTransition>
+
+type DefinedProperty<
+  TValue,
+  TKey extends PropertyKey,
+> = TKey extends keyof TValue
+  ? Exclude<TValue[TKey], undefined>
+  : never
+
+type PresentProperty<
+  TValue,
+  TKey extends PropertyKey,
+> = TKey extends keyof TValue
+  ? [Required<TValue>[TKey]] extends [never]
+    ? never
+    : TKey
+  : never
+
+type ValidTransitionConfig<TValue> =
+  TValue extends { name: infer TTransition extends TransitionName }
+    ? [PresentProperty<TValue, 'exit' | 'enter'>] extends [never]
+      ? [InvalidBuiltInTransitionConfig<TValue, TTransition>] extends [never]
+        ? TValue
+        : never
+      : never
+    : never
+
+type InvalidBuiltInTransitionConfig<
+  TValue,
+  TTransition extends TransitionName,
+> = TTransition extends BuiltInTransitionName
+  ? Exclude<
+      keyof TValue,
+      | 'name'
+      | 'exit'
+      | 'enter'
+      | keyof TransitionOptionsFor<TTransition>
+    > extends never
+    ? Omit<TValue, 'name' | 'exit' | 'enter'> extends
+      TransitionOptionsFor<TTransition>
+      ? never
+      : TTransition
+    : TTransition
+  : never
+
+type ValidPageTransitionInput<TValue> =
+  TValue extends TransitionName
+    ? Extract<TValue, BuiltInOverlayTransitionName> extends never
+      ? TValue
+      : never
+    : TValue extends { name: infer TTransition extends TransitionName }
+      ? Extract<TTransition, BuiltInOverlayTransitionName> extends never
+        ? ValidTransitionConfig<TValue>
+        : never
+      : never
+
+type InvalidPageTransitionInput<TValue> =
+  TValue extends unknown
+    ? [ValidPageTransitionInput<TValue>] extends [never]
+      ? TValue
+      : never
+    : never
+
+type ValidSplitTransition<TValue extends object> =
+  [PresentProperty<TValue, 'name'>] extends [never]
+    ? Exclude<keyof TValue, 'name' | 'exit' | 'enter'> extends never
+      ? [DefinedProperty<TValue, 'exit'>] extends [never]
+        ? [DefinedProperty<TValue, 'enter'>] extends [never]
+          ? never
+          : [InvalidPageTransitionInput<
+              DefinedProperty<TValue, 'enter'>
+            >] extends [never]
+            ? TValue
+            : never
+        : [InvalidPageTransitionInput<
+            DefinedProperty<TValue, 'exit'>
+          >] extends [never]
+          ? [DefinedProperty<TValue, 'enter'>] extends [never]
+            ? TValue
+            : [InvalidPageTransitionInput<
+                DefinedProperty<TValue, 'enter'>
+              >] extends [never]
+              ? TValue
+              : never
+          : never
+      : never
+    : never
+
+type ValidRouteveilTransition<TValue> =
+  TValue extends TransitionName
+    ? TValue
+    : TValue extends object
+      ? [PresentProperty<TValue, 'name'>] extends [never]
+        ? ValidSplitTransition<TValue>
+        : [PresentProperty<TValue, 'exit' | 'enter'>] extends [never]
+          ? ValidTransitionConfig<TValue>
+          : never
+      : never
+
+export type RouteveilTransitionConstraint<
+  TValue extends RouteveilTransition,
+> = TValue & ValidRouteveilTransition<TValue>
+
 export type RouteveilPreload = false | 'intent' | 'viewport' | 'render'
 
 export type RouteveilPendingWorkRegistrar = (
@@ -101,8 +246,7 @@ export type SharedElementsOption =
 export type RouteveilLinkProps<
   TTransition extends TransitionName = TransitionName,
 > = LinkProps & {
-  transition?: TTransition
-  transitionOptions?: TransitionOptionsFor<NoInfer<TTransition>>
+  transition?: RouteveilTransition<TTransition>
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
@@ -112,26 +256,28 @@ export type RouteveilLinkProps<
 export type RouteveilNavigateOptions<
   TTransition extends TransitionName = TransitionName,
 > = NavigateOptions & {
-  transition?: TTransition
-  transitionOptions?: TransitionOptionsFor<NoInfer<TTransition>>
+  transition?: RouteveilTransition<TTransition>
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
 }
 
 export type RouteveilNavigate = <
-  TTransition extends TransitionName = TransitionName,
+  const TTransition extends RouteveilTransition = RouteveilTransition,
 >(
   to: To,
-  options?: RouteveilNavigateOptions<TTransition>,
+  options?: Omit<RouteveilNavigateOptions, 'transition'> & {
+    transition?: RouteveilTransitionConstraint<TTransition>
+  },
 ) => Promise<void>
 
 export type RouteveilPlayOptions = {
-  transitionOptions?: unknown
   clickPosition?: ClickPosition
 }
 
-export type RouteveilPlay = (
-  transition: TransitionName,
+export type RouteveilPlay = <
+  const TTransition extends RouteveilTransition = RouteveilTransition,
+>(
+  transition: RouteveilTransitionConstraint<TTransition>,
   options?: RouteveilPlayOptions,
 ) => Promise<void>

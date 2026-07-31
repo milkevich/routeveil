@@ -198,8 +198,8 @@ export function DocsPage() {
   <div className="docs-hero__description-mask">
     <div className="docs-hero__description-reveal">
       <p className="docs-hero__description">
-        Installation, API lifecycles, transition options, and
-        copyable React Router examples for Routeveil.
+        Start with a working setup, learn the lifecycle, then explore
+        transitions, shared elements, preloading, and the complete API.
       </p>
     </div>
   </div>

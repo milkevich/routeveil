@@ -9,8 +9,8 @@ import type {
   RouteveilPendingWorkRegistrar,
   RouteveilPhase,
   RouteveilPreload,
+  RouteveilTransition,
   SharedElementsOption,
-  TransitionName,
 } from './types.js'
 import type { SharedElementRegistrationToken } from './shared-elements.js'
 
@@ -27,9 +27,8 @@ export type SharedElementSource =
 export type TransitionRequest = {
   to: To
   expectedPath: string
-  transition: TransitionName
+  transition: RouteveilTransition
   commit: () => void | Promise<void>
-  transitionOptions?: unknown
   navigateOptions?: NavigateOptions
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string

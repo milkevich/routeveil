@@ -51,6 +51,7 @@ export type {
   RouteveilLinkProps,
   RouteveilNavigate,
   RouteveilNavigateOptions,
+  RouteveilTransition,
   RouteveilPlay,
   RouteveilPlayOptions,
   RouteveilPendingWorkRegistrar,
@@ -60,6 +61,9 @@ export type {
   RouteveilSharedElementProps,
   RouteveilViewProps,
   SharedElementsOption,
+  SplitTransition,
+  PageTransitionInput,
+  TransitionConfig,
   TransitionOptionsFor,
   TransitionName,
 } from './types.js'

@@ -59,7 +59,7 @@ export type PageTransitionPhases = Readonly<{
 }>;
 
 export type PageTransitionResolver = (
-  transitionOptions?: unknown,
+  options?: unknown,
 ) => PageTransitionPhases;
 
 export type PageTransitionDefinition = Readonly<{

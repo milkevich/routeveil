@@ -25,15 +25,23 @@ function LabContent() {
       setBusy(true)
 
       const rect = trigger.getBoundingClientRect()
+      const transitionInput = (
+        transition.previewOptions
+        && typeof transition.previewOptions === 'object'
+      )
+        ? { name: transition.name, ...transition.previewOptions }
+        : transition.name
 
       try {
-        await playTransition(transition.name, {
-          transitionOptions: transition.previewOptions,
-          clickPosition: {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
+        await playTransition(
+          transitionInput as Parameters<typeof playTransition>[0],
+          {
+            clickPosition: {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+            },
           },
-        })
+        )
       } finally {
         flushSync(() => setBusy(false))
         trigger.focus({ preventScroll: true })

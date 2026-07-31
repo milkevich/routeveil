@@ -1,7 +1,7 @@
 const lifecycle = [
-  { number: '01', label: 'Exit or Cover' },
-  { number: '02', label: 'Commit Navigation' },
-  { number: '03', label: 'Enter or Reveal' },
+  { number: '01', label: 'Exit' },
+  { number: '02', label: 'Navigate' },
+  { number: '03', label: 'Enter' },
   { number: '04', label: 'Reset' },
 ]
 

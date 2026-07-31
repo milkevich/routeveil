@@ -96,7 +96,15 @@ export function Header() {
             className="site-brand"
             data-direction={routeDirection(location.pathname, '/')}
             to="/"
-            transition="push"
+            transition={{
+              enter: {
+                name: "slide",
+                direction: "up"
+              },
+              exit: {
+                name: "fade"
+              },
+            }}
           >
             <img alt="Routeveil" src={logo} />
           </RouteveilLink>
@@ -113,9 +121,15 @@ export function Header() {
                 data-direction={routeDirection(location.pathname, item.path)}
                 key={item.path}
                 to={item.path}
-                transition="slide"
-                transitionOptions={{
-                  direction: routeDirection(location.pathname, item.path),
+                transition={{
+                  exit: {
+                    name: 'slide',
+                    direction: routeDirection(location.pathname, item.path),
+                  },
+                  enter: {
+                    name: 'slide',
+                    direction: routeDirection(location.pathname, item.path),
+                  },
                 }}
               >
                 {item.label}
@@ -134,8 +148,7 @@ export function Header() {
           <ButtonLink
             className="site-header__lab-button"
             to="/lab"
-            transition="wipe"
-            transitionOptions={{ direction: 'left' }}
+            transition={{ name: 'wipe', direction: 'left' }}
             variant="filled"
           >
             Explore Lab
@@ -177,7 +190,7 @@ export function Header() {
             key={item.path}
             onClick={() => setOpenNavigation(null)}
             to={item.path}
-            transition="blur"
+            transition={{ exit: 'blur', enter: 'blur' }}
           >
             <span>{String(index + 1).padStart(2, '0')}</span>
             {item.label}
