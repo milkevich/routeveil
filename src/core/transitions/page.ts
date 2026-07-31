@@ -75,12 +75,12 @@ function pageTransitionPhases(
   };
 }
 
-function resolveDirection(transitionOptions?: unknown): TransitionDirection {
-  if (typeof transitionOptions !== "object" || transitionOptions === null) {
+function resolveDirection(options?: unknown): TransitionDirection {
+  if (typeof options !== "object" || options === null) {
     return "up";
   }
 
-  const { direction } = transitionOptions as { direction?: unknown };
+  const { direction } = options as { direction?: unknown };
 
   return direction === "up" ||
     direction === "down" ||
@@ -120,8 +120,8 @@ function slideTransforms(direction: TransitionDirection): DirectionalTransforms 
   }
 }
 
-function resolveSlide(transitionOptions?: unknown): PageTransitionPhases {
-  const transforms = slideTransforms(resolveDirection(transitionOptions));
+function resolveSlide(options?: unknown): PageTransitionPhases {
+  const transforms = slideTransforms(resolveDirection(options));
 
   return pageTransitionPhases(
     [
@@ -200,8 +200,8 @@ function spinTransforms(direction: TransitionDirection): SpinTransforms {
   }
 }
 
-function resolveSpin(transitionOptions?: unknown): PageTransitionPhases {
-  const transforms = spinTransforms(resolveDirection(transitionOptions));
+function resolveSpin(options?: unknown): PageTransitionPhases {
+  const transforms = spinTransforms(resolveDirection(options));
 
   return pageTransitionPhases(
     [
@@ -225,12 +225,12 @@ function resolveSpin(transitionOptions?: unknown): PageTransitionPhases {
   );
 }
 
-function resolveRotateDirection(transitionOptions?: unknown): RotateDirection {
-  if (typeof transitionOptions !== "object" || transitionOptions === null) {
+function resolveRotateDirection(options?: unknown): RotateDirection {
+  if (typeof options !== "object" || options === null) {
     return "right";
   }
 
-  const { direction } = transitionOptions as { direction?: unknown };
+  const { direction } = options as { direction?: unknown };
 
   return direction === "left" || direction === "right" ? direction : "right";
 }
@@ -253,8 +253,8 @@ function rotateTransforms(direction: RotateDirection): RotateTransforms {
   };
 }
 
-function resolveRotate(transitionOptions?: unknown): PageTransitionPhases {
-  const transforms = rotateTransforms(resolveRotateDirection(transitionOptions));
+function resolveRotate(options?: unknown): PageTransitionPhases {
+  const transforms = rotateTransforms(resolveRotateDirection(options));
 
   return pageTransitionPhases(
     [

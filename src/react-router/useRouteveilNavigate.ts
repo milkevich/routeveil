@@ -41,7 +41,6 @@ export function useRouteveilNavigate(): RouteveilNavigate {
     (to, options: RouteveilNavigateOptions = {}) => {
       const {
         transition,
-        transitionOptions,
         smoothScrollToTop,
         scrollToSharedElement,
         sharedElements,
@@ -77,7 +76,6 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         commit: () => {
           return navigate(to, routeveilNavigateOptions)
         },
-        transitionOptions,
         smoothScrollToTop,
         scrollToSharedElement,
         sharedElements,

@@ -56,8 +56,7 @@ function HeroCTA() {
           }}
           preventScrollReset
           to="/docs#installation"
-          transition="dissolve"
-          transitionOptions={{ color: '#000000' }}
+          transition={{ name: 'dissolve', color: '#000000' }}
         >
           Get Started
         </ButtonLink>
@@ -70,9 +69,8 @@ function HeroCTA() {
           preload="viewport"
           preventScrollReset
           to="/lab"
-          transition="tunnel"
+          transition={{ name: 'tunnel', color: '#f4f4f4' }}
           variant='outlined'
-          transitionOptions={{ color: '#f4f4f4' }}
         >
           Transitions
         </ButtonLink>

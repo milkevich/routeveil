@@ -23,7 +23,8 @@ import {
 import { useRouteveilContext } from './RouteveilContext.js'
 import type {
   RouteveilLinkProps,
-  TransitionName,
+  RouteveilTransition,
+  RouteveilTransitionConstraint,
 } from './types.js'
 import { warnOnce } from './warnings.js'
 
@@ -100,7 +101,6 @@ function getTransitionDestination(
 const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
   function RouteveilLink({
     transition,
-    transitionOptions,
     preload: preloadOverride,
     onClick,
     onFocus,
@@ -276,7 +276,6 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
           mask,
         })
       },
-      transitionOptions,
       smoothScrollToTop,
       scrollToSharedElement,
       sharedElements,
@@ -329,9 +328,11 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
 )
 
 type RouteveilLinkComponent = <
-  TTransition extends TransitionName = TransitionName,
+  const TTransition extends RouteveilTransition = RouteveilTransition,
 >(
-  props: RouteveilLinkProps<TTransition> & RefAttributes<HTMLAnchorElement>,
+  props: Omit<RouteveilLinkProps, 'transition'> & {
+    transition?: RouteveilTransitionConstraint<TTransition>
+  } & RefAttributes<HTMLAnchorElement>,
 ) => ReactElement | null
 
 export const RouteveilLink = RouteveilLinkWithRef as RouteveilLinkComponent

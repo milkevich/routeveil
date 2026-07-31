@@ -33,6 +33,10 @@ const runAct = (
 let reducedMotion = false
 let animationCalls = 0
 let animationCancellations = 0
+let animationRecords: Array<{
+  element: Element
+  keyframes: Keyframe[] | PropertyIndexedKeyframes | null
+}> = []
 
 function createAnimation(): Animation {
   return {
@@ -92,8 +96,7 @@ function Controls() {
       <RouteveilLink
         data-action="overlay"
         to="/overlay"
-        transition="wipe"
-        transitionOptions={{ direction: 'right', duration: 1 }}
+        transition={{ name: 'wipe', direction: 'right', duration: 1 }}
       >
         Overlay
       </RouteveilLink>
@@ -114,8 +117,7 @@ function Controls() {
             preventScrollReset: true,
             replace: true,
             state: { source: 'hook' },
-            transition: 'slide',
-            transitionOptions: { direction: 'left' },
+            transition: { name: 'slide', direction: 'left' },
           })
         }}
         type="button"
@@ -125,13 +127,35 @@ function Controls() {
       <button
         data-action="playback"
         onClick={() => {
-          void play('wipe', {
-            transitionOptions: { direction: 'left', duration: 1 },
-          })
+          void play({ name: 'wipe', direction: 'left', duration: 1 })
         }}
         type="button"
       >
         Playback
+      </button>
+      <button
+        data-action="shared-exit-only"
+        onClick={() => {
+          void navigate('/shared-exit-only', {
+            sharedElements: 'all',
+            transition: { exit: 'fade' },
+          })
+        }}
+        type="button"
+      >
+        Shared exit only
+      </button>
+      <button
+        data-action="shared-enter-only"
+        onClick={() => {
+          void navigate('/shared-enter-only', {
+            sharedElements: 'all',
+            transition: { enter: 'fade' },
+          })
+        }}
+        type="button"
+      >
+        Shared enter only
       </button>
     </nav>
   )
@@ -150,6 +174,8 @@ function DeclarativeApp() {
             <Route element={<Page name="Plain" />} path="/plain" />
             <Route element={<Page name="Modified" />} path="/modified" />
             <Route element={<Page name="Programmatic" />} path="/programmatic" />
+            <Route element={<Page name="Shared exit only" />} path="/shared-exit-only" />
+            <Route element={<Page name="Shared enter only" />} path="/shared-enter-only" />
           </Routes>
         </RouteveilView>
       </RouteveilProvider>
@@ -257,6 +283,7 @@ describe('packed Routeveil compatibility', () => {
     reducedMotion = false
     animationCalls = 0
     animationCancellations = 0
+    animationRecords = []
     window.history.replaceState(null, '', '/')
 
     Object.defineProperty(window, 'matchMedia', {
@@ -275,8 +302,12 @@ describe('packed Routeveil compatibility', () => {
 
     Object.defineProperty(Element.prototype, 'animate', {
       configurable: true,
-      value: () => {
+      value: function animate(
+        this: Element,
+        keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+      ) {
         animationCalls += 1
+        animationRecords.push({ element: this, keyframes })
         return createAnimation()
       },
     })
@@ -384,6 +415,57 @@ describe('packed Routeveil compatibility', () => {
     expect(window.history.length).toBe(historyLength)
     expect(animationCalls).toBeGreaterThan(2)
     await app.unmount()
+  })
+
+  it('keeps shared-element movement active when either page phase is omitted', async () => {
+    const exitApp = await render(<DeclarativeApp />)
+    const exitStart = animationRecords.length
+
+    await click(findElement(exitApp.container, '[data-action="shared-exit-only"]'))
+    await waitFor(() => {
+      expect(findElement(exitApp.container, '[data-location]').textContent).toContain(
+        '/shared-exit-only',
+      )
+      expectClean(exitApp.container)
+    })
+
+    const exitAnimations = animationRecords.slice(exitStart)
+
+    expect(exitAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-shared-element')
+    ))).toBe(true)
+    expect(exitAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-shared-view')
+    ))).toBe(true)
+    expect(exitAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-view')
+    ))).toBe(false)
+    await exitApp.unmount()
+
+    window.history.replaceState(null, '', '/')
+    const enterApp = await render(<DeclarativeApp />)
+    const enterStart = animationRecords.length
+
+    await click(findElement(enterApp.container, '[data-action="shared-enter-only"]'))
+    await waitFor(() => {
+      expect(findElement(enterApp.container, '[data-location]').textContent).toContain(
+        '/shared-enter-only',
+      )
+      expectClean(enterApp.container)
+    })
+
+    const enterAnimations = animationRecords.slice(enterStart)
+
+    expect(enterAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-shared-element')
+    ))).toBe(true)
+    expect(enterAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-shared-view')
+    ))).toBe(false)
+    expect(enterAnimations.some(({ element }) => (
+      element.hasAttribute('data-routeveil-view')
+    ))).toBe(true)
+    await enterApp.unmount()
   })
 
   it('skips animation under reduced motion', async () => {

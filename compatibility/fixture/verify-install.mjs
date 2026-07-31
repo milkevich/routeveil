@@ -26,6 +26,7 @@ const expectedExports = [
   'RouteveilSharedElement',
   'RouteveilView',
   'useRouteveilNavigate',
+  'useRouteveilPendingWork',
   'useRouteveilTransition',
 ]
 

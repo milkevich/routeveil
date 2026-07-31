@@ -1,34 +1,65 @@
-import { RouteveilLink } from '../../../../react-router'
+import { useCallback, useState } from 'react'
+import { flushSync } from 'react-dom'
+import {
+  RouteveilLink,
+  useRouteveilTransition,
+} from '../../../../react-router'
 import { overlayTransitions, pageTransitions } from '../../../data/transitions'
+import type { TransitionMeta } from '../../../data/transitions'
 import { Arrow, CodeBlock } from '../../../shared/UI'
 import { DocSection } from '../DocSection'
 import galleryThumbnail from '../../../../../public/gallery-card-thumbnail.png'
 import { ArrowUpRight } from 'lucide-react'
 
-const pageExample = `import { RouteveilLink } from 'routeveil/react-router'
-
-<RouteveilLink
-  to="/docs"
-  transition="slide"
-  transitionOptions={{ direction: 'left' }}
->
-  Documentation
-</RouteveilLink>`
-
 const overlayExample = `import { RouteveilLink } from 'routeveil/react-router'
 
 <RouteveilLink
   to="/lab"
-  transition="tunnel"
-  transitionOptions={{
-    color: '#000000',
+  transition={{
+    name: 'halo',
     origin: 'cursor',
-    coverDuration: 520,
-    revealDuration: 680,
+    color: '#111',
   }}
 >
   Open Lab
 </RouteveilLink>`
+
+const transitionInputsExample = `navigate('/about', {
+  transition: 'fade',
+})
+
+navigate('/about', {
+  transition: {
+    name: 'slide',
+    direction: 'left',
+  },
+})
+
+navigate('/about', {
+  transition: {
+    exit: 'fade',
+    enter: 'slide',
+  },
+})
+
+navigate('/about', {
+  transition: {
+    enter: 'slide',
+  },
+})`
+
+const configuredPhasesExample = `navigate('/about', {
+  transition: {
+    exit: {
+      name: 'slide',
+      direction: 'left',
+    },
+    enter: {
+      name: 'slide',
+      direction: 'right',
+    },
+  },
+})`
 
 const sharedElementExample = `import {
   RouteveilLink,
@@ -78,46 +109,102 @@ const slideOptions = {
 
 <RouteveilLink
   to="/docs"
-  transition="slide"
-  transitionOptions={slideOptions}
+  transition={{ name: 'slide', ...slideOptions }}
 >
   Documentation
 </RouteveilLink>`
 
 export function TransitionDocs() {
+  const playTransition = useRouteveilTransition()
+  const [previewBusy, setPreviewBusy] = useState(false)
+
+  const activateTransition = useCallback(
+    async (
+      transition: TransitionMeta,
+      trigger: HTMLButtonElement,
+    ) => {
+      if (previewBusy) return
+
+      setPreviewBusy(true)
+
+      const rect = trigger.getBoundingClientRect()
+      const transitionInput = (
+        transition.previewOptions
+        && typeof transition.previewOptions === 'object'
+      )
+        ? { name: transition.name, ...transition.previewOptions }
+        : transition.name
+
+      try {
+        await playTransition(
+          transitionInput as Parameters<typeof playTransition>[0],
+          {
+            clickPosition: {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+            },
+          },
+        )
+      } finally {
+        flushSync(() => setPreviewBusy(false))
+        trigger.focus({ preventScroll: true })
+      }
+    },
+    [playTransition, previewBusy],
+  )
+
   return (
     <>
       <DocSection
         id="page-transitions"
-        index="11"
-        intro="Page transitions animate the registered RouteveilView while persistent interface outside it remains mounted."
+        index="13"
+        intro="Page transitions animate the route region you registered, with independent control over how the old page leaves and the new page arrives."
         title="Page Transitions"
       >
-        <CodeBlock filename="DocsLink.tsx" language="tsx">{pageExample}</CodeBlock>
         <p>
-          A page transition animates the current view out, commits navigation, waits
-          for the new location to render and paint, then animates the registered view
-          back in. The provider keeps the view inert during this lifecycle and restores
-          its previous state during reset.
+          The default lifecycle is <code>exit → navigate → enter</code>. Routeveil
+          animates the current <code>RouteveilView</code>, commits the destination,
+          waits until the incoming route is rendered and ready, then animates the same
+          view back in. The view remains inert until cleanup restores interaction.
+        </p>
+        <h3>Transition inputs</h3>
+        <CodeBlock filename="Navigation.tsx" language="tsx">{transitionInputsExample}</CodeBlock>
+        <p>
+          A string uses the preset defaults. A <code>name</code> object configures one
+          complete transition with its options beside the name. Use <code>exit</code>{' '}
+          and <code>enter</code> to select the two page phases independently.
+        </p>
+        <h3>Configure each phase</h3>
+        <CodeBlock filename="ConfiguredPhases.tsx" language="tsx">{configuredPhasesExample}</CodeBlock>
+        <p>
+          Each split phase resolves with its own configuration. Omitting one phase skips
+          only that page animation. A missing phase does not fall back to the other
+          phase and does not create a zero-duration substitute.
         </p>
         <div className="built-in-group">
           <div className="built-in-list">
             {pageTransitions.map((transition, index) => (
-              <article className="built-in-card" key={transition.name}>
+              <button
+                aria-label={`Play ${transition.name} transition`}
+                className="built-in-card"
+                disabled={previewBusy}
+                key={transition.name}
+                onClick={(event) => {
+                  void activateTransition(transition, event.currentTarget)
+                }}
+                type="button"
+              >
                 <div className="built-in-card__top">
                   <span className="built-in-card__index">
                     {String(index + 1).padStart(2, '0')}
                   </span>
 
-                  <RouteveilLink
-                    aria-label={`Preview ${transition.name} transition`}
+                  <span
+                    aria-hidden="true"
                     className="built-in-card__link"
-                    to={`/lab?transition=${transition.name}`}
-                    transition="slide"
-                    transitionOptions={{ direction: 'left' }}
                   >
                     <Arrow diagonal />
-                  </RouteveilLink>
+                  </span>
                 </div>
 
                 <div className="built-in-card__content">
@@ -129,25 +216,25 @@ export function TransitionDocs() {
                     {transition.options}
                   </code>
                 </div>
-              </article>
+              </button>
             ))}
           </div>
         </div>
         <div className="doc-note">
           <strong>Preset timing</strong>
           <p>
-            Built-in page transitions own their keyframes, duration, and easing.
-            <code> slide</code> and <code>spin</code> accept a four-way direction,
-            <code> rotate</code> accepts left or right, and the other page presets
-            have no transition-specific options.
+            Built-in page effects own their keyframes, duration, and easing.
+            {' '}<code>slide</code> and <code>spin</code> accept up, down, left, or
+            right; <code>rotate</code> accepts left or right. Other page presets need
+            only their name.
           </p>
         </div>
       </DocSection>
 
       <DocSection
         id="shared-elements"
-        index="12"
-        intro="Shared elements connect the same conceptual visual across two routes while composing with any Routeveil page transition."
+        index="14"
+        intro="Shared elements visually connect matching content across routes without replacing either route's real DOM."
         title="Shared Elements"
       >
 
@@ -156,8 +243,8 @@ export function TransitionDocs() {
           style={{
             marginTop: "-1rem"
           }}
-          transition="tunnel"
-          transitionOptions={{
+          transition={{
+            name: "tunnel",
             origin: "cursor",
             color: "#f5f5f5"
           }}
@@ -170,8 +257,7 @@ export function TransitionDocs() {
             </h2>
 
             <span>
-              Try out the gallery playground, see how shared elements behave between
-              routes
+              Open the playground and inspect matching, movement, and handoff live
             </span>
           </div>
 
@@ -180,129 +266,115 @@ export function TransitionDocs() {
           </div>
         </RouteveilLink>
 
+        <h3>Basic workflow</h3>
         <CodeBlock filename="ProjectRoutes.tsx" language="tsx">{sharedElementExample}</CodeBlock>
         <p>
-          Wrap the matching real element on both routes with
-          <code> RouteveilSharedElement</code> and give both instances the same unique
-          <code> name</code>. The component clones its single child without adding a
-          layout wrapper. A custom child must forward its ref to one HTML or SVG
-          element.
+          Wrap the matching source and destination elements with the same unique name, then start a page transition.
+        </p>
+        <p>
+          Matching uses the <code>name</code>, not the element tag or route position.
+          Names must be unique within each active route. Custom children must forward
+          their ref to one HTML or SVG element.
         </p>
         <div className="doc-note">
-          <strong>Sequential lifecycle</strong>
+          <strong>Coordinated lifecycle</strong>
           <p>
-            <code>page exit → shared-element movement → page enter</code>. Shared
-            elements are a capability layered onto page transitions, not transitions
-            named <code>shared</code> or <code>shared-element</code>. Routeveil completes
-            each phase before starting the next, so they never overlap. The incoming
-            page remains hidden and inert during movement. Each settled clone stays over
-            its hidden real target throughout enter, then hands off after enter completes.
+            When an exit phase exists, shared movement starts with a short lead and
+            overlaps the page exit. Page enter starts after both have finished. Without
+            an exit phase, shared movement finishes before page enter. Shared elements
+            enhance a page transition; they are not a transition name.
           </p>
         </div>
         <div className="doc-split">
           <article>
             <h3>Source discovery</h3>
             <p>
-              A <code>RouteveilLink</code> selects uniquely named shared elements that
-              are the triggering anchor, inside it, or contain it. An unrelated link
-              starts no shared-element session. Programmatic navigation uses its
-              <code> scrollToSharedElement</code> name as a source hint, then falls back
-              only when the active <code>RouteveilView</code> has one unambiguous source.
-              Use <code>sharedElements</code> to select exact names, opt into
-              route-wide selection with <code>all</code>, or disable sharing. Duplicate
-              names are skipped because they cannot be matched safely.
+              With the default <code>sharedElements=&quot;auto&quot;</code>, a clicked
+              {' '}<code>RouteveilLink</code> selects shared elements on, inside, or
+              around that link. Use <code>sharedElements</code> to select exact names,
+              choose <code>all</code>, or disable sharing with <code>false</code>.
             </p>
           </article>
           <article>
             <h3>Matching</h3>
             <p>
-              Matching uses <code>name</code>, not the HTML tag. Names must be unique
-              within one active route. Same-tag visuals move and morph supported
-              computed styles. Different tags or substantially different visuals move
-              through the same geometry and crossfade before the real target takes
-              over; Routeveil does not replace or semantically morph application DOM
-              nodes.
+              Missing destination names are skipped. Duplicate names are also skipped
+              because they are ambiguous. Other valid shared elements continue without
+              blocking the page transition.
             </p>
           </article>
         </div>
         <h3>Multiple elements</h3>
         <CodeBlock filename="ProjectLink.tsx" language="tsx">{multipleSharedElementsExample}</CodeBlock>
         <p>
-          One route may register multiple uniquely named shared elements. Routeveil
-          captures every valid element related to the same navigation trigger, moves
-          valid matches concurrently during one middle stage, waits for every movement
-          before starting the page enter, and keeps settled clones mounted until enter
-          finishes. A missing or duplicate target is skipped immediately. A registered
-          target waits only while its image or geometry is not ready, without blocking
-          other matches after the readiness deadline.
+          One navigation can connect multiple unique names. Valid matches move together,
+          and Routeveil waits for them before starting the page enter phase.
         </p>
         <h3>Scroll anchor</h3>
         <p>
-          Set <code>scrollToSharedElement</code> on a page-transition
-          <code> RouteveilLink</code> or programmatic navigation request to match one incoming
-          <code> RouteveilSharedElement</code> by its exact <code>name</code>. Routeveil
-          instantly centers that element on the viewport&apos;s Y axis, preserves the X
-          position, then measures every shared endpoint. A URL hash takes precedence.
-          A valid anchor overrides <code>preventScrollReset</code> and
-          <code> smoothScrollToTop</code>. If the named incoming element is missing,
-          duplicated, or unmeasurable, Routeveil warns and falls back to the existing
-          scroll policy. Reduced motion skips shared movement but still applies a valid
-          anchor position.
+          Set <code>scrollToSharedElement</code> to an incoming shared-element name to
+          center it vertically before the transition continues. A URL hash takes
+          precedence. A valid shared-element target takes precedence over{' '}
+          <code>preventScrollReset</code> and <code>smoothScrollToTop</code>. If the
+          target is missing or duplicated, Routeveil warns and uses the normal scroll
+          policy.
         </p>
         <h3>Supported behavior</h3>
         <p>
-          Shared elements activate automatically with page transitions such as
-          <code> fade</code>, <code>blur</code>, <code>slide</code>,
-          <code> spin</code>, <code>rotate</code>, <code>bounce</code>,
-          <code> push</code>, and <code>pull</code>. Overlay transitions and same-page
-          playback ignore shared registrations. Reduced motion skips cloning and
-          movement while navigation continues normally.
+          Shared elements work with every page transition, including split and
+          one-sided page phases. Overlay transitions and same-page playback ignore
+          shared registrations. Reduced motion skips shared movement while navigation
+          and valid <code>scrollToSharedElement</code> positioning still complete.
         </p>
         <div className="doc-note">
           <strong>Current limitations</strong>
           <p>
-            Each wrapper accepts one React element child that resolves to one HTML or
-            SVG element, and custom children must forward a ref. Browser history does
-            not independently start shared movement, and video playback continuity is
-            not guaranteed. Canvas, iframe, WebGL, audio, and pseudo-element fidelity
-            is limited. Keep target layout stable when it mounts; overlay transitions
-            do not support shared elements.
+            Each wrapper needs one child that resolves to one HTML or SVG element;
+            custom children must forward a ref. Back and Forward do not start shared
+            movement. Video playback continuity is not preserved, and canvas, iframe,
+            WebGL, audio, and pseudo-element fidelity is limited.
           </p>
         </div>
       </DocSection>
 
       <DocSection
         id="overlay-transitions"
-        index="13"
-        intro="Overlay transitions mount above the complete application, cover the viewport before navigation, and reveal the incoming route only after it renders."
+        index="15"
+        intro="Overlay transitions hide the entire application before navigation, making route replacement invisible until the destination is ready."
         title="Overlay Transitions"
       >
         <CodeBlock filename="LabLink.tsx" language="tsx">{overlayExample}</CodeBlock>
         <p>
-          The provider mounts an overlay through <code>document.body</code>, waits for
-          its cover phase to become fully opaque, commits navigation, then runs reveal.
-          Reset removes the overlay after reveal completes. Fixed viewport geometry lets
-          overlay effects cover headers, footers, and other interface outside
-          <code> RouteveilView</code>.
+          <code>halo</code> is a built-in overlay transition. Overlay transitions use
+          the <code>cover → navigate → reveal</code> lifecycle: they hide the current
+          screen, commit navigation, wait for the destination, then reveal it. Because
+          they cover the viewport, persistent interface outside{' '}
+          <code>RouteveilView</code> is hidden too.
         </p>
         <div className="built-in-group">
           <div className="built-in-list">
             {overlayTransitions.map((transition, index) => (
-              <article className="built-in-card" key={transition.name}>
+              <button
+                aria-label={`Play ${transition.name} transition`}
+                className="built-in-card"
+                disabled={previewBusy}
+                key={transition.name}
+                onClick={(event) => {
+                  void activateTransition(transition, event.currentTarget)
+                }}
+                type="button"
+              >
                 <div className="built-in-card__top">
                   <span className="built-in-card__index">
                     {String(index + 1).padStart(2, '0')}
                   </span>
 
-                  <RouteveilLink
-                    aria-label={`Preview ${transition.name} transition`}
+                  <span
+                    aria-hidden="true"
                     className="built-in-card__link"
-                    to={`/lab?transition=${transition.name}`}
-                    transition="slide"
-                    transitionOptions={{ direction: 'left' }}
                   >
                     <Arrow diagonal />
-                  </RouteveilLink>
+                  </span>
                 </div>
 
                 <div className="built-in-card__content">
@@ -314,87 +386,88 @@ export function TransitionDocs() {
                     {transition.options}
                   </code>
                 </div>
-              </article>
+              </button>
             ))}
           </div>
         </div>
         <div className="doc-note">
           <strong>Coverage and origin</strong>
           <p>
-            Solid overlays accept <code>color</code>; <code>mosaic</code> accepts a
-            <code> colors</code> array. Cursor-aware radial effects calculate their
-            radius from the selected point to the farthest viewport corner. When no
-            pointer coordinates are available, cursor origin falls back to center.
+            Most solid overlays accept <code>color</code>; <code>mosaic</code> accepts a
+            palette through <code>colors</code>. Pointer-aware radial effects expand far
+            enough to cover the farthest corner. The built-in <code>halo</code>{' '}
+            transition accepts <code>origin: &apos;cursor&apos;</code> or{' '}
+            <code>origin: &apos;center&apos;</code>. Links provide pointer coordinates;
+            keyboard and programmatic navigation use the center fallback.
           </p>
         </div>
       </DocSection>
 
       <DocSection
-        id="transition-options"
-        index="14"
-        intro="For built-ins with configurable options, transitionOptions is selected from the chosen transition name and exposes the fields used by that implementation."
-        title="Transition Options"
+        id="configuring-transitions"
+        index="16"
+        intro="Configure a transition by placing only the options supported by that name directly beside name."
+        title="Configuring Transitions"
       >
         <div className="option-groups">
           <article>
             <h3>Direction</h3>
             <p>
-              <code>slide</code> and <code>spin</code> accept up, down, left, or right
-              and default to up. <code>rotate</code> accepts left or right and defaults
-              to right. Wipe accepts right, left, down, or up; columns accepts down,
-              up, or alternate; rows accepts right, left, or alternate; clock accepts
-              clockwise or counterclockwise; and venetian accepts horizontal or vertical.
+              Direction values depend on the effect. <code>slide</code> and
+              {' '}<code>spin</code> use up, down, left, or right. <code>rotate</code> uses
+              left or right. Overlay direction types are effect-specific: for example,
+              clock uses clockwise or counterclockwise, while venetian uses horizontal
+              or vertical. TypeScript prevents mixing these vocabularies.
             </p>
           </article>
           <article>
             <h3>Timing</h3>
             <p>
-              Every overlay accepts a per-phase <code>duration</code>. Tunnel also
-              accepts <code>coverDuration</code> and <code>revealDuration</code>.
-              Pixel, columns, rows, venetian, and mosaic accept <code>stagger</code>.
-              Curtain, wipe, columns, rows, iris, halo, tunnel, and clock accept
-              <code> easing</code>. Built-in page timing is fixed.
+              Overlay effects accept <code>duration</code> where listed. Tunnel can set
+              {' '}<code>coverDuration</code> and <code>revealDuration</code> separately.
+              Segmented effects expose <code>stagger</code>, and effects that support
+              timing curves expose <code>easing</code>. Built-in page timing is fixed.
             </p>
           </article>
           <article>
             <h3>Color</h3>
             <p>
-              Pixel, curtain, wipe, columns, rows, iris, halo, tunnel, clock,
-              venetian, and dissolve accept one opaque CSS <code>color</code>.
-              Mosaic uses <code>colors</code> because its tiles can draw from a palette.
+              Most overlays use one opaque CSS <code>color</code>. Mosaic uses
+              {' '}<code>colors</code> because each tile can select from a palette. Keep
+              cover colors opaque so navigation cannot become visible mid-cover.
             </p>
           </article>
           <article>
             <h3>Origin</h3>
             <p>
-              Iris, halo, tunnel, and clock accept cursor or center. Pixel also accepts
-              corner and random origins; mosaic accepts cursor, center, or random.
-              Iris, halo, and tunnel default to cursor; clock, pixel, and mosaic default
-              to center. RouteveilLink supplies pointer coordinates, while keyboard
-              and programmatic navigation use the center fallback.
+              Origin controls where a spatial effect begins. <code>iris</code>,{' '}
+              <code>halo</code>, <code>tunnel</code>, and <code>clock</code> accept{' '}
+              <code>cursor</code> or <code>center</code>. <code>pixel</code> accepts{' '}
+              <code>cursor</code>, <code>center</code>, <code>top-left</code>,{' '}
+              <code>top-right</code>, <code>bottom-left</code>,{' '}
+              <code>bottom-right</code>, or <code>random</code>. <code>mosaic</code>{' '}
+              accepts <code>cursor</code>, <code>center</code>, or <code>random</code>.
+              {' '}<code>RouteveilLink</code> supplies pointer coordinates. Requests
+              without them fall back to the viewport center.
             </p>
           </article>
           <article>
             <h3>Scroll behavior</h3>
             <p>
-              Successful transitioned navigation without a hash scrolls to the top
-              instantly by default. Set <code>smoothScrollToTop</code> for smooth
-              scrolling. <code>preventScrollReset</code> preserves the current position
-              and takes precedence over smooth scrolling. A valid
-              <code> scrollToSharedElement</code> anchor instead centers the exactly
-              named incoming shared element vertically while preserving horizontal
-              scroll. Hash destinations retain their native target behavior and take
-              precedence over the shared anchor, while playback and cancelled runs do
-              not change scroll position.
+              A successful transition resets to the top instantly unless another rule
+              wins. Use <code>smoothScrollToTop</code> for a smooth reset or
+              {' '}<code>preventScrollReset</code> to preserve position. URL hashes take
+              highest precedence, followed by a valid{' '}
+              <code>scrollToSharedElement</code> anchor. Playback and cancelled runs do
+              not change scroll.
             </p>
           </article>
           <article>
             <h3>TypeScript inference</h3>
             <p>
-              Keep an option-bearing transition name literal so Routeveil can infer its
-              option type for RouteveilLink and useRouteveilNavigate. Optionless page
-              presets ignore transitionOptions. The playback hook accepts unknown options
-              because its transition name and options are not conditionally tied.
+              Keep <code>name</code> literal so Routeveil can select the corresponding
+              option type. The same inference applies to links, programmatic navigation,
+              playback, complete transitions, and each side of a split transition.
             </p>
           </article>
         </div>
@@ -402,10 +475,10 @@ export function TransitionDocs() {
         <div className="doc-note">
           <strong>Match options to the transition</strong>
           <p>
-            A clockwise direction belongs to <code>clock</code>, not <code>slide</code>.
-            Likewise, <code>colors</code> belongs to <code>mosaic</code>, while tunnel
-            and other solid overlays use <code>color</code>. Literal names let
-            TypeScript report these mismatches before runtime.
+            The transition name is the discriminator. Clockwise belongs to
+            {' '}<code>clock</code>, not <code>slide</code>; <code>colors</code> belongs
+            to <code>mosaic</code>, while tunnel uses <code>color</code>. Literal names
+            turn those mistakes into immediate TypeScript errors.
           </p>
         </div>
       </DocSection>

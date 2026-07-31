@@ -13,8 +13,10 @@ yarn add routeveil`
 const packageImports = `import {
   RouteveilLink,
   RouteveilProvider,
+  RouteveilSharedElement,
   RouteveilView,
   useRouteveilNavigate,
+  useRouteveilPendingWork,
   useRouteveilTransition,
 } from 'routeveil/react-router'`
 
@@ -44,8 +46,7 @@ function Home() {
       <h1>Home</h1>
       <RouteveilLink
         to="/about"
-        transition="slide"
-        transitionOptions={{ direction: 'left' }}
+        transition="fade"
       >
         About
       </RouteveilLink>
@@ -59,8 +60,7 @@ function About() {
       <h1>About</h1>
       <RouteveilLink
         to="/"
-        transition="slide"
-        transitionOptions={{ direction: 'right' }}
+        transition="fade"
       >
         Home
       </RouteveilLink>
@@ -88,17 +88,16 @@ export function GettingStartedDocs() {
       <DocSection
         id="overview"
         index="01"
-        intro="Routeveil is a transition layer for React Router that coordinates animation phases around individual navigation requests."
+        intro="Routeveil adds explicit, per-navigation transitions to React Router without moving animation logic into your route components."
         title="Overview"
       >
-        <code style={{ width: "fit-content", textTransform: "uppercase" }}>New in v0.2.0</code>
         <RouteveilLink
           to="/lab/shared-elements"
           style={{
             marginTop: "-1rem"
           }}
-          transition="tunnel"
-          transitionOptions={{
+          transition={{
+            name: "tunnel",
             origin: "cursor",
             color: "#f5f5f5"
           }}
@@ -111,8 +110,7 @@ export function GettingStartedDocs() {
             </h2>
 
             <span>
-              Try out the gallery playground, see how shared elements behave between
-              routes
+              Open the playground and watch one visual connect two different routes
             </span>
           </div>
 
@@ -121,45 +119,46 @@ export function GettingStartedDocs() {
           </div>
         </RouteveilLink>
         <p>
-          Each transitioned navigation selects an effect. Routeveil waits for the
-          outgoing page to exit or an overlay to cover the viewport, commits the
-          navigation, waits for the new location to render, then enters or reveals
-          the next page before restoring idle state.
+          React Router still owns routing. Routeveil owns the short visual lifecycle
+          around a navigation: prepare the current screen, commit the destination at
+          the safe moment, wait for the next route to render, reveal it, and restore
+          normal interaction. Your pages remain ordinary React components.
         </p>
         <LifecycleDiagram />
         <div className="doc-split">
           <article>
             <h3>Page transitions</h3>
             <p>
-              Page transitions animate the registered <code>RouteveilView</code>.
-              Headers, footers, and other interface outside that wrapper remain
-              mounted while the route content changes.
+              Page transitions animate only <code>RouteveilView</code>. Put routed
+              content inside that view and keep persistent headers, navigation, and
+              footers outside it when they should stay in place.
             </p>
           </article>
           <article>
             <h3>Overlay transitions</h3>
             <p>
-              Overlay transitions render above the application. They fully cover
-              the viewport before navigation commits, then reveal the newly rendered
-              route from above persistent interface.
+              Overlay transitions cover the entire viewport, including persistent
+              interface. Navigation commits only after the overlay has hidden the old
+              screen; the overlay then reveals the rendered destination.
             </p>
           </article>
         </div>
         <p>
-          <code>RouteveilProvider</code> owns transition state and timing.
-          <code> RouteveilView</code> identifies the page region used by page effects.
-          <code> RouteveilLink</code> adds transitions to links, while
-          <code> useRouteveilNavigate</code> handles programmatic navigation.
-          <code> useRouteveilTransition</code> can play the same lifecycle without
-          changing the route.
+          Routeveil&apos;s API is divided into a few focused responsibilities.{' '}
+          <code>RouteveilProvider</code> coordinates transitions, while{' '}
+          <code>RouteveilView</code> marks the animated route region.{' '}
+          <code>RouteveilLink</code> and <code>useRouteveilNavigate</code> start
+          transition-aware navigation. <code>useRouteveilTransition</code> previews an
+          effect without changing the location.
         </p>
         <div className="doc-note">
           <strong>Navigation remains opt-in</strong>
           <p>
-            Regular React Router links and navigation continue to work normally.
-            Transitions are selected per request, and only one Routeveil transition
-            runs at a time. An additional Routeveil request reuses the active promise
-            without queuing or committing another destination.
+            Nothing animates unless that navigation supplies <code>transition</code>.{' '}
+            Regular React Router links, browser history, direct loads, and refreshes
+            keep their normal behavior. Routeveil runs one request at a time; another
+            Routeveil request made while one is active returns the active promise and
+            does not queue a second destination.
           </p>
         </div>
       </DocSection>
@@ -167,19 +166,18 @@ export function GettingStartedDocs() {
       <DocSection
         id="installation"
         index="02"
-        intro="Install Routeveil from npm with the package manager used by your React application."
+        intro="Install one package, then import the React Router integration from its dedicated public entry point."
         title="Installation"
       >
         <CodeBlock filename="install.sh" language="bash">{installCommands}</CodeBlock>
         <p>
-          Run the command for your package manager. The npm package is
-          <code> routeveil</code>, and its public React Router entry point is
-          <code> routeveil/react-router</code>.
+          Run exactly one command above. The package name is <code>routeveil</code>;{' '}
+          application code imports from <code>routeveil/react-router</code>.
         </p>
-        <CodeBlock filename="transitions.ts" language="typescript">{packageImports}</CodeBlock>
+        <CodeBlock filename="imports.ts" language="typescript">{packageImports}</CodeBlock>
         <p>
-          Routeveil expects React, React DOM, and React Router DOM to be installed
-          in the consuming application. The package ships as an ES module with
+          React, React DOM, and React Router DOM are peer dependencies, so your
+          application provides them. Routeveil ships as an ES module and includes its
           TypeScript declarations.
         </p>
         <div className="doc-facts">
@@ -191,15 +189,40 @@ export function GettingStartedDocs() {
       </DocSection>
 
       <DocSection
-        id="compatibility"
+        id="quick-start"
         index="03"
-        intro="Review the React, React DOM, and React Router DOM versions verified against Routeveil's published package."
+        intro="Put the provider inside React Router, mark one routed region as the view, and select a transition on the navigation that should animate."
+        title="Quick Start"
+      >
+        <CodeBlock filename="main.tsx" language="tsx">{quickStartMain}</CodeBlock>
+        <CodeBlock filename="App.tsx" language="tsx">{quickStartApp}</CodeBlock>
+        <p>
+          Read the tree from the outside in: <code>BrowserRouter</code> provides router
+          context, <code>RouteveilProvider</code> coordinates transitions, and{' '}
+          <code>RouteveilView</code> wraps exactly the route content that page effects
+          should animate. The header stays mounted because it sits outside the view.
+          Each <code>RouteveilLink</code> chooses the effect for its own navigation.
+        </p>
+        <div className="doc-note">
+          <strong>Ordinary links still work</strong>
+          <p>
+            Omit <code>transition</code> and <code>RouteveilLink</code> behaves like a
+            React Router <code>Link</code>. Direct loads, refreshes, Back and Forward,
+            and ordinary React Router navigation do not invent an entrance animation.
+          </p>
+        </div>
+      </DocSection>
+
+      <DocSection
+        id="compatibility"
+        index="04"
+        intro="These peer-dependency ranges are the versions Routeveil supports and verifies as an installed package."
         title="Compatibility"
       >
         <p>
-          Routeveil verifies its published package against the following peer
-          dependency ranges. npm peer dependency warnings indicate that the
-          consuming application is outside these supported versions.
+          Your application must satisfy all three ranges. A peer-dependency warning
+          from npm means at least one installed version falls outside this supported
+          contract.
         </p>
         <div className="prop-table-wrap" tabIndex={0}>
           <table className="prop-table">
@@ -227,40 +250,15 @@ export function GettingStartedDocs() {
           </table>
         </div>
         <p>
-          Routeveil is tested in CI across React 18 and 19 with supported React
-          Router DOM 6 and 7 releases.
-          React Router 5 and React Router 8 are not currently supported.{' '}
+          CI installs the packed library into isolated React 18 and 19 applications
+          using supported React Router DOM 6 and 7 releases, then typechecks, tests,
+          and builds each fixture. React Router 5 and 8 are not supported.{' '}
           <a style={{
             textDecoration: "underline"
           }} href="https://github.com/milkevich/routeveil/blob/main/src/app/data/compatibility.json">
             View the exact test matrix.
           </a>
         </p>
-      </DocSection>
-
-      <DocSection
-        id="quick-start"
-        index="04"
-        intro="Place the provider inside router context, wrap route content in one persistent view, and choose a transition on each RouteveilLink."
-        title="Quick Start"
-      >
-        <CodeBlock filename="main.tsx" language="tsx">{quickStartMain}</CodeBlock>
-        <CodeBlock filename="App.tsx" language="tsx">{quickStartApp}</CodeBlock>
-        <p>
-          <code>main.tsx</code> creates the <code>BrowserRouter</code> context.
-          <code> App.tsx</code> defines the persistent layout and routes, with
-          <code> RouteveilProvider</code> beneath the router. <code>RouteveilView</code>
-          wraps the content animated by page transitions while the header remains
-          mounted outside that view. Each link chooses its own transition and options.
-        </p>
-        <div className="doc-note">
-          <strong>Ordinary links still work</strong>
-          <p>
-            A <code>RouteveilLink</code> without a transition behaves like a regular
-            React Router <code>Link</code>. Direct loads, refreshes, and navigation
-            that does not use a Routeveil transition render without an entrance effect.
-          </p>
-        </div>
       </DocSection>
     </>
   )

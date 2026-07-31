@@ -18,10 +18,10 @@ const customizationLinks = [
   },
   {
     index: '03',
-    title: 'Options',
+    title: 'Configuration',
     description:
-      'See the complete transitionOptions reference and TypeScript behavior.',
-    to: '/docs#transition-options',
+      'See the complete transition configuration reference and TypeScript behavior.',
+    to: '/docs#configuring-transitions',
   },
   {
     index: '04',
@@ -60,8 +60,7 @@ export function CustomizationSection() {
             className="transition-card customization-card"
             key={item.to}
             to={item.to}
-            transition="wipe"
-            transitionOptions={{ direction: 'right' }}
+            transition={{ name: 'wipe', direction: 'right' }}
           >
             <span className="transition-card__index">
               {item.index}
