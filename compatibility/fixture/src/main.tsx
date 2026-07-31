@@ -36,8 +36,7 @@ export function Controls() {
           search: '?tab=api',
           hash: '#usage',
         }}
-        transition="slide"
-        transitionOptions={{ direction: 'left' }}
+        transition={{ name: 'slide', direction: 'left' }}
         viewTransition
       >
         Details
@@ -49,8 +48,7 @@ export function Controls() {
             relative: 'path',
             replace: true,
             state: { source: 'hook' },
-            transition: 'wipe',
-            transitionOptions: { direction: 'right' },
+            transition: { name: 'wipe', direction: 'right' },
             viewTransition: true,
           })
         }}
