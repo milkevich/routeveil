@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { ReactNode } from 'react'
 import type { NavigateOptions, To } from 'react-router-dom'
 import type {
   ClickPosition,
@@ -6,6 +7,7 @@ import type {
   OverlayTransitionDefinition,
 } from '../core/index.js'
 import type {
+  RouteveilBetweenInput,
   RouteveilPendingWorkRegistrar,
   RouteveilPhase,
   RouteveilPreload,
@@ -28,6 +30,7 @@ export type TransitionRequest = {
   to: To
   expectedPath: string
   transition: RouteveilTransition
+  between?: RouteveilBetweenInput
   commit: () => void | Promise<void>
   navigateOptions?: NavigateOptions
   smoothScrollToTop?: boolean
@@ -37,6 +40,19 @@ export type TransitionRequest = {
   waitForLocationChange?: boolean
   sharedElementSource?: SharedElementSource
   preload?: () => Promise<void>
+}
+
+export type BetweenLocationSnapshot = {
+  key: string
+  path: string
+}
+
+export type BetweenRegistrationInput = {
+  host: HTMLElement
+  location: BetweenLocationSnapshot
+  while: boolean
+  minDuration: number
+  content: ReactNode
 }
 
 export type ActiveOverlay = {
@@ -52,6 +68,7 @@ export type RouteveilContextValue = {
   transitionTo: (request: TransitionRequest) => Promise<void>
   defaultPreload: RouteveilPreload
   preloadRoute: (path: string) => Promise<void>
+  captureBetween: (token: symbol) => void
   registerPendingWork: RouteveilPendingWorkRegistrar
   registerView: (
     element: HTMLElement | null,
@@ -60,6 +77,18 @@ export type RouteveilContextValue = {
   registerOverlayHandle: (
     id: number,
     handle: OverlayAnimationHandle | null,
+  ) => void
+  registerOverlayRoot: (
+    id: number,
+    element: HTMLElement | null,
+  ) => void
+  registerBetween: (
+    token: symbol,
+    host: HTMLElement,
+  ) => () => void
+  updateBetween: (
+    token: symbol,
+    input: BetweenRegistrationInput,
   ) => void
   registerSharedElement: (
     token: SharedElementRegistrationToken,

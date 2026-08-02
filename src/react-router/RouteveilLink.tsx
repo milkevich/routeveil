@@ -101,6 +101,7 @@ function getTransitionDestination(
 const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
   function RouteveilLink({
     transition,
+    between,
     preload: preloadOverride,
     onClick,
     onFocus,
@@ -268,6 +269,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       to: destination.to,
       expectedPath,
       transition,
+      between,
       commit: () => {
         return navigate(destination.to, {
           replace,
