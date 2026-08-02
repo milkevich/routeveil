@@ -16,6 +16,7 @@ const builtEntryPath = resolve(
   packageJson.exports['./react-router'].import,
 )
 const expectedExports = [
+  'RouteveilBetween',
   'RouteveilLink',
   'RouteveilProvider',
   'RouteveilSharedElement',
@@ -102,6 +103,7 @@ for (const name of ['window', 'document', 'Element', 'Animation', 'matchMedia'])
 
 const publicApi = await import('routeveil/react-router')
 assert.deepEqual(Object.keys(publicApi).sort(), expectedExports.toSorted())
+assert.equal(typeof publicApi.RouteveilBetween, 'function')
 assert.ok(publicApi.RouteveilLink)
 assert.ok(publicApi.RouteveilSharedElement)
 assert.ok(publicApi.RouteveilView)
@@ -134,6 +136,13 @@ const serverMarkup = renderToString(
           { name: 'documentation' },
           createElement('main', null, 'Documentation'),
         ),
+        createElement(publicApi.RouteveilBetween, {
+          content: createElement(
+            'span',
+            { 'data-server-between': 'true' },
+            'Between content',
+          ),
+        }),
       ),
       createElement('footer', { 'data-package-shell': 'footer' }, 'Footer'),
     ),
@@ -147,6 +156,7 @@ assert.match(serverMarkup, /data-routeveil-phase="idle"/u)
 assert.match(serverMarkup, /href="\/docs"/u)
 assert.match(serverMarkup, /<main>Documentation<\/main>/u)
 assert.doesNotMatch(serverMarkup, /data-routeveil-overlay-root/u)
+assert.doesNotMatch(serverMarkup, /data-server-between/u)
 assert.doesNotMatch(serverMarkup, /aria-busy/u)
 
 for (const name of ['window', 'document', 'Element', 'Animation', 'matchMedia']) {

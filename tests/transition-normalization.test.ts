@@ -78,12 +78,14 @@ describe('transition normalization', () => {
     expect(fadeResolver).toHaveBeenCalledOnce()
     expect(fadeResolver).toHaveBeenCalledWith(undefined)
     expect(normalized.exit).toEqual({
+      betweenPhase: fadePhases.enter,
       definition: fade,
       name: 'fade',
       options: undefined,
       phase: fadePhases.exit,
     })
     expect(normalized.enter).toEqual({
+      betweenPhase: fadePhases.exit,
       definition: fade,
       name: 'fade',
       options: undefined,
@@ -108,12 +110,14 @@ describe('transition normalization', () => {
     expect(slideResolver).toHaveBeenCalledOnce()
     expect(slideResolver).toHaveBeenCalledWith({ direction: 'left' })
     expect(normalized.exit).toEqual({
+      betweenPhase: slideLeftPhases.enter,
       definition: slide,
       name: 'slide',
       options: { direction: 'left' },
       phase: slideLeftPhases.exit,
     })
     expect(normalized.enter).toEqual({
+      betweenPhase: slideLeftPhases.exit,
       definition: slide,
       name: 'slide',
       options: { direction: 'left' },
@@ -160,12 +164,14 @@ describe('transition normalization', () => {
     expect(fadeResolver).toHaveBeenCalledOnce()
     expect(slideResolver).toHaveBeenCalledOnce()
     expect(normalized.exit).toEqual({
+      betweenPhase: fadePhases.enter,
       definition: fade,
       name: 'fade',
       options: undefined,
       phase: fadePhases.exit,
     })
     expect(normalized.enter).toEqual({
+      betweenPhase: slideDefaultPhases.exit,
       definition: slide,
       name: 'slide',
       options: undefined,
@@ -190,12 +196,14 @@ describe('transition normalization', () => {
     expect(slideResolver).toHaveBeenNthCalledWith(1, { direction: 'left' })
     expect(slideResolver).toHaveBeenNthCalledWith(2, { direction: 'right' })
     expect(normalized.exit).toEqual({
+      betweenPhase: slideLeftPhases.enter,
       definition: slide,
       name: 'slide',
       options: { direction: 'left' },
       phase: slideLeftPhases.exit,
     })
     expect(normalized.enter).toEqual({
+      betweenPhase: slideRightPhases.exit,
       definition: slide,
       name: 'slide',
       options: { direction: 'right' },
@@ -216,9 +224,11 @@ describe('transition normalization', () => {
     }
 
     expect(exitOnly.exit?.phase).toBe(fadePhases.exit)
+    expect(exitOnly.exit?.betweenPhase).toBe(fadePhases.enter)
     expect(exitOnly.enter).toBeNull()
     expect(enterOnly.exit).toBeNull()
     expect(enterOnly.enter?.phase).toBe(slideDefaultPhases.enter)
+    expect(enterOnly.enter?.betweenPhase).toBe(slideDefaultPhases.exit)
   })
 
   it('keeps a valid split phase when the other phase is unknown', () => {

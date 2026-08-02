@@ -12,6 +12,7 @@ import {
   createBrowserRouter,
 } from 'react-router-dom'
 import {
+  RouteveilBetween,
   RouteveilLink,
   RouteveilProvider,
   RouteveilSharedElement,
@@ -27,6 +28,7 @@ export function Controls() {
   return (
     <nav>
       <RouteveilLink
+        between={<span>Loading details</span>}
         preventScrollReset
         relative="path"
         replace
@@ -44,6 +46,10 @@ export function Controls() {
       <button
         onClick={() => {
           void navigate('../programmatic?source=hook#result', {
+            between: {
+              content: <span>Loading programmatic route</span>,
+              minDuration: 1,
+            },
             preventScrollReset: true,
             relative: 'path',
             replace: true,
@@ -86,6 +92,19 @@ export function Page({ name }: { name: string }) {
   )
 }
 
+export function BetweenPage() {
+  return (
+    <>
+      <RouteveilBetween
+        content={<span>Incoming route ready</span>}
+        minDuration={1}
+        while={false}
+      />
+      <Page name="Between" />
+    </>
+  )
+}
+
 export function DeclarativeApp() {
   return (
     <BrowserRouter>
@@ -96,6 +115,7 @@ export function DeclarativeApp() {
             <Route element={<Page name="Home" />} path="/" />
             <Route element={<Page name="Details" />} path="/details" />
             <Route element={<Page name="Programmatic" />} path="/programmatic" />
+            <Route element={<BetweenPage />} path="/between" />
           </Routes>
         </RouteveilView>
       </RouteveilProvider>
@@ -120,6 +140,7 @@ const dataRouter = createBrowserRouter([
       { index: true, element: <Page name="Home" /> },
       { path: 'details', element: <Page name="Details" /> },
       { path: 'programmatic', element: <Page name="Programmatic" /> },
+      { path: 'between', element: <BetweenPage /> },
     ],
   },
 ])
