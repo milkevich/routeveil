@@ -22,6 +22,7 @@ import {
   prefersReducedMotion,
 } from '../core/index.js'
 import type {
+  AnimationPhaseDefinition,
   OverlayAnimationHandle,
   OverlayTransitionDefinition,
   TransitionDefinition,
@@ -29,10 +30,16 @@ import type {
 import {
   RouteveilContext,
   type ActiveOverlay,
+  type BetweenRegistrationInput,
   type RouteveilContextValue,
   type TransitionRequest,
 } from './RouteveilContext.js'
 import { RouteveilOverlayPortal } from './RouteveilOverlayPortal.js'
+import {
+  RouteveilBetweenLayer,
+  type BetweenLayerHandle,
+  type BetweenLayerScope,
+} from './RouteveilBetweenLayer.js'
 import type {
   RouteveilPhase,
   RouteveilProviderProps,
@@ -69,6 +76,10 @@ import {
   type NormalizedTransition,
   type TransitionNormalizationIssue,
 } from './normalize-transition.js'
+import {
+  normalizeBetweenInput,
+  type NormalizedRouteveilBetween,
+} from './normalize-between.js'
 
 type LocationSnapshot = {
   key: string
@@ -81,6 +92,7 @@ type CancellationReason = 'external-location' | 'provider-unmount'
 
 type LifecycleFailureKind =
   | 'animation-timeout'
+  | 'between-ready-timeout'
   | 'location-timeout'
   | 'navigation-timeout'
   | 'overlay-ready-timeout'
@@ -111,6 +123,18 @@ type TransitionRun = {
   viewOwnerships: ViewOwnership[]
   overlayHandle: OverlayAnimationHandle | null
   overlayReset: boolean
+  between: NormalizedRouteveilBetween | null
+  betweenAppearancePhase: AnimationPhaseDefinition | null
+  betweenDisappearancePhase: AnimationPhaseDefinition | null
+  betweenHandle: BetweenLayerHandle | null
+  betweenReset: boolean
+  betweenReleased: boolean
+  betweenStartedAt: number | null
+  betweenAppearance: Promise<void> | null
+  betweenAppearanceComplete: boolean
+  betweenContentPromise: Promise<void>
+  betweenVisibleToken: symbol | null
+  betweenVisibleVersion: number | null
   previousFocus: HTMLElement | null
   finalized: boolean
   workReleased: boolean
@@ -123,6 +147,12 @@ type TransitionRun = {
   pendingWork: Set<Promise<void>>
   preloadPromise: Promise<void> | null
   previousSharedHandoffsCleanup: () => void
+}
+
+type BetweenRegistration = BetweenRegistrationInput & {
+  token: symbol
+  order: number
+  contentVersion: number
 }
 
 type LocationWaiter = {
@@ -138,6 +168,20 @@ type PreparedLocationWait = {
 type OverlayReady = {
   id: number
   resolve: (handle: OverlayAnimationHandle) => void
+}
+
+type BetweenReady = {
+  id: number
+  resolve: (handle: BetweenLayerHandle | null) => void
+}
+
+type ActiveBetweenLayer = {
+  appearancePhase: AnimationPhaseDefinition | null
+  disappearancePhase: AnimationPhaseDefinition | null
+  fallback: NormalizedRouteveilBetween | null
+  id: number
+  reducedMotion: boolean
+  scope: BetweenLayerScope
 }
 
 type LazyRouteLoader = () => Promise<unknown>
@@ -161,6 +205,7 @@ type SharedScrollTargetWaitResult = SharedScrollTargetResolution
 const LOCATION_WATCHDOG_MS = 10_000
 const ANIMATION_WATCHDOG_MS = 15_000
 const OVERLAY_READY_WATCHDOG_MS = 2_000
+const BETWEEN_READY_WATCHDOG_MS = 2_000
 const PRELOAD_WATCHDOG_MS = 10_000
 const READINESS_WATCHDOG_MS = 10_000
 const SHARED_TARGET_WATCHDOG_MS = 600
@@ -169,6 +214,7 @@ const SHARED_SCROLL_WATCHDOG_MS = 1_200
 const SHARED_EXIT_LEAD_MS = 150
 const SHARED_SCROLL_STABILIZATION_FRAMES = 6
 const SHARED_SCROLL_STABLE_FRAMES = 2
+const MAX_TIMER_DELAY_MS = 2_147_483_647
 const HISTORY_CHANGE_EVENT = 'routeveil:historychange'
 
 let historyInstrumentationUsers = 0
@@ -382,6 +428,23 @@ function locationsMatch(
   return first.key === second.key && first.path === second.path
 }
 
+function getIncomingBetweenRegistrations(
+  run: TransitionRun,
+  registrations: Iterable<BetweenRegistration>,
+): BetweenRegistration[] {
+  const location = run.request.waitForLocationChange === false
+    ? run.acceptedLocation
+    : run.committedLocation
+
+  if (!location) {
+    return []
+  }
+
+  return [...registrations]
+    .filter((registration) => locationsMatch(registration.location, location))
+    .sort((first, second) => first.order - second.order)
+}
+
 function registerCleanup(
   run: TransitionRun,
   cleanup: () => void,
@@ -578,6 +641,24 @@ function resetOverlay(run: TransitionRun): void {
   }
 }
 
+function resetBetween(run: TransitionRun): void {
+  if (run.betweenReset) {
+    return
+  }
+
+  run.betweenReset = true
+
+  try {
+    run.betweenHandle?.reset()
+  } catch (error) {
+    if (isRouteveilDevelopment()) {
+      console.error(error)
+    }
+  }
+
+  run.betweenHandle = null
+}
+
 function releasePreviousSharedHandoffs(run: TransitionRun): void {
   const cleanup = run.previousSharedHandoffsCleanup
   run.previousSharedHandoffsCleanup = () => undefined
@@ -604,6 +685,7 @@ function releaseRunWork(run: TransitionRun): void {
   cancelAnimations([...run.animations])
   run.animations.clear()
   restoreOwnedViews(run)
+  resetBetween(run)
   resetOverlay(run)
   run.sharedSession?.cleanup()
   run.acceptingPendingWork = false
@@ -872,6 +954,7 @@ function reportTransitionError(
   if (error instanceof TransitionLifecycleError) {
     const messages: Record<LifecycleFailureKind, string> = {
       'animation-timeout': `Routeveil: The “${transitionLabel}” animation did not settle and was safely stopped.`,
+      'between-ready-timeout': 'Routeveil: The between layer could not be prepared. Navigation continued without between rendering.',
       'location-timeout': 'Routeveil: Navigation did not produce the expected location change. Visual state was safely restored.',
       'navigation-timeout': 'Routeveil: The navigation promise did not settle. Visual state was safely restored.',
       'overlay-ready-timeout': `Routeveil: The “${transitionLabel}” overlay did not become ready and was safely removed.`,
@@ -936,7 +1019,13 @@ export function RouteveilProvider({
   const navigationContext = useContext(UNSAFE_NavigationContext)
   const [phase, setPhase] = useState<RouteveilPhase>('idle')
   const [activeOverlay, setActiveOverlay] = useState<ActiveOverlay | null>(null)
+  const [activeBetween, setActiveBetween] = useState<ActiveBetweenLayer | null>(
+    null,
+  )
   const viewRef = useRef<HTMLElement | null>(null)
+  const overlayRootRef = useRef<{ id: number; element: HTMLElement } | null>(
+    null,
+  )
   const sharedHandoffBoundaryRef = useRef<Element | null>(null)
   const observedLocationRef = useRef(getLocationSnapshot(location))
   const locationWaitersRef = useRef<LocationWaiter[]>([])
@@ -945,6 +1034,17 @@ export function RouteveilProvider({
   const mountedRef = useRef(true)
   const runIdRef = useRef(0)
   const overlayReadyRef = useRef<OverlayReady | null>(null)
+  const betweenReadyRef = useRef<BetweenReady | null>(null)
+  const betweenHandleCandidateRef = useRef<{
+    id: number
+    handle: BetweenLayerHandle
+  } | null>(null)
+  const betweenHandleNotificationPendingRef = useRef(false)
+  const betweenHandleSignalIdRef = useRef<number | null>(null)
+  const betweenRegistrationsRef = useRef(new Map<symbol, BetweenRegistration>())
+  const betweenRegistrationOrderRef = useRef(0)
+  const betweenRegistrationListenersRef = useRef(new Set<() => void>())
+  const betweenNotificationPendingRef = useRef(false)
   const sharedRegistrationsRef = useRef(new Map<
     SharedElementRegistrationToken,
     SharedElementRegistration
@@ -962,47 +1062,47 @@ export function RouteveilProvider({
   )
 
   const preloadRoute = useCallback((path: string): Promise<void> => {
-  const router = dataRouterContext?.router
+    const router = dataRouterContext?.router
 
-  if (!router) {
-    return Promise.resolve()
-  }
+    if (!router) {
+      return Promise.resolve()
+    }
 
-  const matches = matchRoutes(router.routes, path)
+    const matches = matchRoutes(router.routes, path)
 
-  if (!matches) {
-    return Promise.resolve()
-  }
+    if (!matches) {
+      return Promise.resolve()
+    }
 
-  const promises = matches.flatMap(({ route }) => {
-    const loaders = getLazyRouteLoaders(route.lazy)
+    const promises = matches.flatMap(({ route }) => {
+      const loaders = getLazyRouteLoaders(route.lazy)
 
-    return loaders.map((loader) => {
-      const key = loader as object
-      const cached = lazyRoutePromisesRef.current.get(key)
+      return loaders.map((loader) => {
+        const key = loader as object
+        const cached = lazyRoutePromisesRef.current.get(key)
 
-      if (cached) {
-        return cached
-      }
-
-      const promise = Promise.resolve()
-        .then(() => loader())
-        .then(() => undefined)
-
-      lazyRoutePromisesRef.current.set(key, promise)
-
-      void promise.catch(() => {
-        if (lazyRoutePromisesRef.current.get(key) === promise) {
-          lazyRoutePromisesRef.current.delete(key)
+        if (cached) {
+          return cached
         }
+
+        const promise = Promise.resolve()
+          .then(() => loader())
+          .then(() => undefined)
+
+        lazyRoutePromisesRef.current.set(key, promise)
+
+        void promise.catch(() => {
+          if (lazyRoutePromisesRef.current.get(key) === promise) {
+            lazyRoutePromisesRef.current.delete(key)
+          }
+        })
+
+        return promise
       })
-
-      return promise
     })
-  })
 
-  return Promise.all(promises).then(() => undefined)
-}, [dataRouterContext?.router])
+    return Promise.all(promises).then(() => undefined)
+  }, [dataRouterContext?.router])
 
   const isRunCurrent = useCallback((run: TransitionRun): boolean => (
     mountedRef.current
@@ -1118,12 +1218,115 @@ export function RouteveilProvider({
     setPhase(nextPhase)
   }, [assertRunCurrent])
 
+  const notifyBetweenRegistrationChange = useCallback(() => {
+    if (betweenNotificationPendingRef.current) {
+      return
+    }
+
+    betweenNotificationPendingRef.current = true
+    queueMicrotask(() => {
+      betweenNotificationPendingRef.current = false
+
+      if (!mountedRef.current) {
+        return
+      }
+
+      for (const listener of [...betweenRegistrationListenersRef.current]) {
+        listener()
+      }
+    })
+  }, [])
+
+  const registerBetween = useCallback((
+    token: symbol,
+    host: HTMLElement,
+  ): (() => void) => {
+    const registration: BetweenRegistration = {
+      content: null,
+      contentVersion: 0,
+      host,
+      location: { key: '', path: '' },
+      while: false,
+      minDuration: 0,
+      token,
+      order: ++betweenRegistrationOrderRef.current,
+    }
+    betweenRegistrationsRef.current.set(token, registration)
+    notifyBetweenRegistrationChange()
+    let released = false
+
+    return () => {
+      if (released) {
+        return
+      }
+
+      released = true
+
+      if (betweenRegistrationsRef.current.get(token)?.host === host) {
+        betweenRegistrationsRef.current.delete(token)
+        notifyBetweenRegistrationChange()
+      }
+    }
+  }, [notifyBetweenRegistrationChange])
+
+  const updateBetween = useCallback((
+    token: symbol,
+    input: BetweenRegistrationInput,
+  ): void => {
+    const registration = betweenRegistrationsRef.current.get(token)
+
+    if (!registration) {
+      return
+    }
+
+    const contentChanged = !Object.is(registration.content, input.content)
+    const changed = registration.host !== input.host
+      || !locationsMatch(registration.location, input.location)
+      || registration.while !== input.while
+      || registration.minDuration !== input.minDuration
+      || contentChanged
+
+    if (!changed) {
+      return
+    }
+
+    betweenRegistrationsRef.current.set(token, {
+      ...registration,
+      ...input,
+      contentVersion: contentChanged
+        ? registration.contentVersion + 1
+        : registration.contentVersion,
+    })
+    notifyBetweenRegistrationChange()
+  }, [notifyBetweenRegistrationChange])
+
+  const captureBetween = useCallback((token: symbol): void => {
+    const registration = betweenRegistrationsRef.current.get(token)
+    const run = activeRunRef.current
+
+    if (!registration || !run || !isRunCurrent(run) || run.betweenReleased) {
+      return
+    }
+
+    run.betweenHandle?.capture(registration.host)
+  }, [isRunCurrent])
+
   const clearRunOverlay = useCallback((run: TransitionRun): void => {
     if (!mountedRef.current || activeRunRef.current !== run) {
       return
     }
 
     setActiveOverlay((current) => (
+      current?.id === run.id ? null : current
+    ))
+  }, [])
+
+  const clearRunBetween = useCallback((run: TransitionRun): void => {
+    if (!mountedRef.current || activeRunRef.current !== run) {
+      return
+    }
+
+    setActiveBetween((current) => (
       current?.id === run.id ? null : current
     ))
   }, [])
@@ -1529,6 +1732,8 @@ export function RouteveilProvider({
   useLayoutEffect(() => {
     const sharedRegistrations = sharedRegistrationsRef.current
     const sharedRegistrationListeners = sharedRegistrationListenersRef.current
+    const betweenRegistrations = betweenRegistrationsRef.current
+    const betweenRegistrationListeners = betweenRegistrationListenersRef.current
     mountedRef.current = true
 
     return () => {
@@ -1553,6 +1758,14 @@ export function RouteveilProvider({
 
       locationWaitersRef.current = []
       overlayReadyRef.current = null
+      betweenReadyRef.current = null
+      betweenHandleCandidateRef.current = null
+      betweenHandleNotificationPendingRef.current = false
+      betweenHandleSignalIdRef.current = null
+      overlayRootRef.current = null
+      betweenNotificationPendingRef.current = false
+      betweenRegistrations.clear()
+      betweenRegistrationListeners.clear()
       sharedRegistrations.clear()
       sharedRegistrationListeners.clear()
     }
@@ -1615,6 +1828,63 @@ export function RouteveilProvider({
     ready.resolve(handle)
   }, [isRunCurrent])
 
+  const registerOverlayRoot = useCallback((
+    id: number,
+    element: HTMLElement | null,
+  ): void => {
+    if (element) {
+      overlayRootRef.current = { id, element }
+      return
+    }
+
+    if (overlayRootRef.current?.id === id) {
+      overlayRootRef.current = null
+    }
+  }, [])
+
+  const registerBetweenHandle = useCallback((
+    id: number,
+    handle: BetweenLayerHandle | null,
+  ): void => {
+    betweenHandleSignalIdRef.current = id
+
+    if (!handle) {
+      if (betweenHandleCandidateRef.current?.id === id) {
+        betweenHandleCandidateRef.current = null
+      }
+    } else {
+      betweenHandleCandidateRef.current = { id, handle }
+    }
+
+    if (betweenHandleNotificationPendingRef.current) {
+      return
+    }
+
+    betweenHandleNotificationPendingRef.current = true
+    queueMicrotask(() => {
+      betweenHandleNotificationPendingRef.current = false
+      const candidate = betweenHandleCandidateRef.current
+      const signalId = betweenHandleSignalIdRef.current
+      const ready = betweenReadyRef.current
+      const run = activeRunRef.current
+
+      if (
+        signalId === null
+        || !ready
+        || ready.id !== signalId
+        || !run
+        || run.id !== signalId
+        || !isRunCurrent(run)
+      ) {
+        return
+      }
+
+      betweenHandleCandidateRef.current = null
+      betweenHandleSignalIdRef.current = null
+      ready.resolve(candidate?.id === signalId ? candidate.handle : null)
+    })
+  }, [isRunCurrent])
+
   const prepareOverlay = useCallback((
     run: TransitionRun,
     definition: OverlayTransitionDefinition,
@@ -1648,6 +1918,352 @@ export function RouteveilProvider({
       ),
     )
   }, [setRunPhase])
+
+  const startBetweenContentTransition = useCallback((
+    run: TransitionRun,
+    handle: BetweenLayerHandle,
+    transition: Promise<void>,
+  ): void => {
+    const task = waitForTask(
+      run,
+      transition,
+      ANIMATION_WATCHDOG_MS,
+      new TransitionLifecycleError(
+        'animation-timeout',
+        'Routeveil between content crossfade did not settle.',
+      ),
+      () => handle.reset(),
+    )
+    run.betweenContentPromise = task
+    void task.catch(() => undefined)
+  }, [])
+
+  const syncBetweenContent = useCallback((run: TransitionRun): void => {
+    if (
+      !isRunCurrent(run)
+      || !run.betweenHandle
+      || run.betweenReleased
+      || !run.betweenAppearanceComplete
+    ) {
+      return
+    }
+
+    const registrations = getIncomingBetweenRegistrations(
+      run,
+      betweenRegistrationsRef.current.values(),
+    )
+    const registration = registrations.at(-1) ?? null
+    const token = registration?.token ?? null
+    const version = registration?.contentVersion ?? null
+
+    if (run.betweenVisibleToken === token) {
+      if (
+        registration
+        && run.betweenVisibleVersion !== version
+      ) {
+        run.betweenVisibleVersion = version
+        const handle = run.betweenHandle
+        startBetweenContentTransition(
+          run,
+          handle,
+          handle.refresh(
+            registration.host,
+            (animation) => run.animations.add(animation),
+          ),
+        )
+      }
+
+      return
+    }
+
+    run.betweenVisibleToken = token
+    run.betweenVisibleVersion = version
+    const handle = run.betweenHandle
+    startBetweenContentTransition(
+      run,
+      handle,
+      handle.show(
+        registration?.host ?? null,
+        (animation) => run.animations.add(animation),
+      ),
+    )
+  }, [isRunCurrent, startBetweenContentTransition])
+
+  const prepareBetween = useCallback(async (
+    run: TransitionRun,
+    scope: BetweenLayerScope,
+  ): Promise<boolean> => {
+    if (run.betweenReset || run.betweenReleased) {
+      return false
+    }
+
+    if (run.sharedSession) {
+      warnOnce(
+        `between-shared-elements:${run.request.expectedPath}`,
+        'Routeveil: Between rendering cannot be combined with shared elements. Between rendering was skipped for this transition.',
+      )
+      return false
+    }
+
+    if (run.betweenHandle) {
+      if (!run.betweenHandle.updateScope(scope)) {
+        warnOnce(
+          `between-scope:${run.request.expectedPath}`,
+          'Routeveil: The between layer could not follow the active route view. Navigation continued without between rendering.',
+        )
+        resetBetween(run)
+        clearRunBetween(run)
+        setRunPhase(run, 'navigating')
+        return false
+      }
+
+      return true
+    }
+
+    const registrations = getIncomingBetweenRegistrations(
+      run,
+      betweenRegistrationsRef.current.values(),
+    )
+
+    if (!run.between && registrations.length === 0) {
+      return false
+    }
+
+    let resolveReady!: (handle: BetweenLayerHandle | null) => void
+    const readyPromise = new Promise<BetweenLayerHandle | null>((resolve) => {
+      resolveReady = resolve
+    })
+    betweenReadyRef.current = {
+      id: run.id,
+      resolve: resolveReady,
+    }
+
+    setRunPhase(run, 'between')
+    setActiveBetween({
+      appearancePhase: run.betweenAppearancePhase,
+      disappearancePhase: run.betweenDisappearancePhase,
+      fallback: run.between,
+      id: run.id,
+      reducedMotion: prefersReducedMotion(),
+      scope,
+    })
+
+    let handle: BetweenLayerHandle | null
+
+    try {
+      handle = await waitForTask(
+        run,
+        readyPromise,
+        BETWEEN_READY_WATCHDOG_MS,
+        new TransitionLifecycleError(
+          'between-ready-timeout',
+          'Routeveil between layer did not become ready.',
+        ),
+      )
+
+      if (!handle) {
+        throw new TransitionLifecycleError(
+          'between-ready-timeout',
+          'Routeveil between layer could not attach to its visual scope.',
+        )
+      }
+    } catch (error) {
+      if (
+        error instanceof TransitionCancelledError
+        || run.controller.signal.aborted
+      ) {
+        throw error
+      }
+
+      warnOnce(
+        `between-ready-timeout:${run.request.expectedPath}`,
+        'Routeveil: The between layer could not be prepared. Navigation continued without between rendering.',
+      )
+      betweenReadyRef.current = null
+      resetBetween(run)
+      clearRunBetween(run)
+      return false
+    }
+
+    assertRunCurrent(run)
+    betweenReadyRef.current = null
+    run.betweenHandle = handle
+    const initialRegistration = run.between
+      ? null
+      : registrations.at(-1) ?? null
+    run.betweenVisibleToken = initialRegistration?.token ?? null
+    run.betweenVisibleVersion = initialRegistration?.contentVersion ?? null
+
+    if (initialRegistration) {
+      await waitForTask(
+        run,
+        handle.show(
+          initialRegistration.host,
+          (animation) => run.animations.add(animation),
+        ),
+        ANIMATION_WATCHDOG_MS,
+        new TransitionLifecycleError(
+          'animation-timeout',
+          'Routeveil between content preparation did not settle.',
+        ),
+        () => handle.reset(),
+      )
+      assertRunCurrent(run)
+    }
+
+    const registrationListener = () => syncBetweenContent(run)
+    betweenRegistrationListenersRef.current.add(registrationListener)
+    registerCleanup(run, () => {
+      betweenRegistrationListenersRef.current.delete(registrationListener)
+    })
+
+    run.betweenStartedAt = Date.now()
+    const appearance = waitForTask(
+      run,
+      handle.appear((animation) => run.animations.add(animation)),
+      ANIMATION_WATCHDOG_MS,
+      new TransitionLifecycleError(
+        'animation-timeout',
+        'Routeveil between appearance animation did not settle.',
+      ),
+      () => handle.reset(),
+    )
+    run.betweenAppearance = appearance
+    void appearance.then(() => {
+      if (!isRunCurrent(run) || run.betweenReleased) {
+        return
+      }
+
+      run.betweenAppearanceComplete = true
+      syncBetweenContent(run)
+    }, () => undefined)
+    return true
+  }, [
+    assertRunCurrent,
+    clearRunBetween,
+    isRunCurrent,
+    setRunPhase,
+    syncBetweenContent,
+  ])
+
+  const waitForBetweenAppearance = useCallback(async (
+    run: TransitionRun,
+  ): Promise<void> => {
+    if (!run.betweenAppearance) {
+      return
+    }
+
+    await run.betweenAppearance
+    assertRunCurrent(run)
+    run.betweenAppearanceComplete = true
+    syncBetweenContent(run)
+  }, [assertRunCurrent, syncBetweenContent])
+
+  const waitForBetweenRequirements = useCallback((
+    run: TransitionRun,
+  ): Promise<void> => new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+    let removeRunCleanup: () => void = () => undefined
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      betweenRegistrationListenersRef.current.delete(check)
+      run.controller.signal.removeEventListener('abort', abort)
+      removeRunCleanup()
+    }
+    const settle = (released: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+
+      if (released) {
+        run.betweenReleased = true
+      }
+
+      cleanup()
+      resolve()
+    }
+    const check = () => {
+      window.clearTimeout(timer)
+      timer = 0
+
+      if (!isRunCurrent(run) || run.betweenReleased) {
+        settle(false)
+        return
+      }
+
+      const registrations = getIncomingBetweenRegistrations(
+        run,
+        betweenRegistrationsRef.current.values(),
+      )
+
+      if (registrations.some((registration) => registration.while)) {
+        return
+      }
+
+      const minimumDuration = Math.max(
+        run.between?.minDuration ?? 0,
+        ...registrations.map((registration) => registration.minDuration),
+      )
+      const startedAt = run.betweenStartedAt ?? Date.now()
+      const remaining = Math.max(0, startedAt + minimumDuration - Date.now())
+
+      if (remaining > 0) {
+        timer = window.setTimeout(
+          check,
+          Math.min(remaining, MAX_TIMER_DELAY_MS),
+        )
+        return
+      }
+
+      settle(true)
+    }
+    const abort = () => settle(false)
+
+    betweenRegistrationListenersRef.current.add(check)
+    run.controller.signal.addEventListener('abort', abort, { once: true })
+    removeRunCleanup = registerCleanup(run, abort)
+    check()
+  }), [isRunCurrent])
+
+  const finishBetween = useCallback(async (
+    run: TransitionRun,
+  ): Promise<void> => {
+    const handle = run.betweenHandle
+
+    if (!handle) {
+      return
+    }
+
+    await waitForBetweenAppearance(run)
+
+    await waitForBetweenRequirements(run)
+    assertRunCurrent(run)
+    await run.betweenContentPromise
+    assertRunCurrent(run)
+    handle.freeze()
+    await waitForTask(
+      run,
+      handle.disappear((animation) => run.animations.add(animation)),
+      ANIMATION_WATCHDOG_MS,
+      new TransitionLifecycleError(
+        'animation-timeout',
+        'Routeveil between disappearance animation did not settle.',
+      ),
+      () => handle.reset(),
+    )
+    assertRunCurrent(run)
+    resetBetween(run)
+    clearRunBetween(run)
+  }, [
+    assertRunCurrent,
+    clearRunBetween,
+    waitForBetweenAppearance,
+    waitForBetweenRequirements,
+  ])
 
   const commitOnce = useCallback(async (
     run: TransitionRun,
@@ -1744,7 +2360,13 @@ export function RouteveilProvider({
       assertRunCurrent(run)
     }
 
-    const sharedScrollTargetName = allowSharedScroll
+    const hasBetweenRendering = run.between !== null
+      || getIncomingBetweenRegistrations(
+        run,
+        betweenRegistrationsRef.current.values(),
+      ).length > 0
+    const sharedScrollAllowed = allowSharedScroll && !hasBetweenRendering
+    const sharedScrollTargetName = sharedScrollAllowed
       ? getSharedScrollTargetName(run.request)
       : null
     let handledSharedScroll = false
@@ -1791,7 +2413,7 @@ export function RouteveilProvider({
     if (!handledSharedScroll) {
       scrollAfterNavigation(
         run.request,
-        run.sharedScrollFallback || !allowSharedScroll,
+        run.sharedScrollFallback || !sharedScrollAllowed,
       )
     }
 
@@ -1823,15 +2445,21 @@ export function RouteveilProvider({
       overlayReadyRef.current = null
     }
 
+    if (betweenReadyRef.current?.id === run.id) {
+      betweenReadyRef.current = null
+    }
+
     if (mountedRef.current && activeRunRef.current === run) {
+      clearRunBetween(run)
       clearRunOverlay(run)
       setPhase('idle')
       applyFocusPolicy(run, viewRef.current)
     }
-  }, [clearRunOverlay])
+  }, [clearRunBetween, clearRunOverlay])
 
   const stopVisualWork = useCallback((run: TransitionRun): void => {
     cancelAnimations([...run.animations])
+    resetBetween(run)
     resetOverlay(run)
     run.sharedSession?.cleanup()
 
@@ -1839,8 +2467,13 @@ export function RouteveilProvider({
       overlayReadyRef.current = null
     }
 
+    if (betweenReadyRef.current?.id === run.id) {
+      betweenReadyRef.current = null
+    }
+
+    clearRunBetween(run)
     clearRunOverlay(run)
-  }, [clearRunOverlay])
+  }, [clearRunBetween, clearRunOverlay])
 
   const executeTransition = useCallback(async (
     run: TransitionRun,
@@ -1858,6 +2491,11 @@ export function RouteveilProvider({
         resolvedTransitions,
       )
       transitionLabel = describeNormalizedTransition(transition)
+
+      if (transition.type === 'page') {
+        run.betweenAppearancePhase = transition.exit?.betweenPhase ?? null
+        run.betweenDisappearancePhase = transition.enter?.betweenPhase ?? null
+      }
 
       for (const issue of transition.issues) {
         reportTransitionNormalizationIssue(issue)
@@ -1893,10 +2531,154 @@ export function RouteveilProvider({
       }
 
       if (prefersReducedMotion()) {
+        const hasPlaybackBetween = request.waitForLocationChange === false
+          && (
+            run.between !== null
+            || getIncomingBetweenRegistrations(
+              run,
+              betweenRegistrationsRef.current.values(),
+            ).length > 0
+          )
+
+        if (
+          request.waitForLocationChange === false
+          && !hasPlaybackBetween
+        ) {
+          releasePreviousSharedHandoffs(run)
+          setRunPhase(run, 'navigating')
+          await commitOnce(run, true, transition.type === 'page')
+          assertRunCurrent(run)
+          return
+        }
+
+        if (
+          transition.type === 'page'
+          && !transition.exit?.phase
+          && !transition.enter?.phase
+        ) {
+          releasePreviousSharedHandoffs(run)
+          setRunPhase(run, 'navigating')
+          await commitOnce(run, true, true)
+          assertRunCurrent(run)
+          return
+        }
+
+        const reducedPageView = transition.type === 'page'
+          ? viewRef.current
+          : null
+
+        if (transition.type === 'page' && !reducedPageView) {
+          releasePreviousSharedHandoffs(run)
+          setRunPhase(run, 'navigating')
+          await commitOnce(run, true, true)
+          assertRunCurrent(run)
+          return
+        }
+
+        let releaseReducedView: () => void = () => undefined
+        let removeReducedViewCleanup: () => void = () => undefined
+        let reducedBackground: ReturnType<typeof retainViewportBackground>
+          | null = null
+        let removeReducedBackgroundCleanup: () => void = () => undefined
+        let suppressedReducedView: HTMLElement | null = null
+        const suppressReducedView = (view: HTMLElement) => {
+          if (suppressedReducedView === view) {
+            return
+          }
+
+          releaseReducedView()
+          removeReducedViewCleanup()
+          reducedBackground?.cleanup()
+          removeReducedBackgroundCleanup()
+          claimView(run, view)
+          reducedBackground = retainViewportBackground(view)
+          removeReducedBackgroundCleanup = registerCleanup(
+            run,
+            reducedBackground.cleanup,
+          )
+          releaseReducedView = suppressPageView(view)
+          removeReducedViewCleanup = registerCleanup(run, releaseReducedView)
+          suppressedReducedView = view
+        }
+
+        const hasInitialReducedBetween = run.between !== null
+          || getIncomingBetweenRegistrations(
+            run,
+            betweenRegistrationsRef.current.values(),
+          ).length > 0
+
+        if (hasInitialReducedBetween && viewRef.current) {
+          suppressReducedView(viewRef.current)
+        }
+
         releasePreviousSharedHandoffs(run)
-        setRunPhase(run, 'navigating')
-        await commitOnce(run, true, transition.type === 'page')
+        const reducedScope: BetweenLayerScope = reducedPageView
+          ? {
+              preserveViewLayout: request.waitForLocationChange === false,
+              type: 'page',
+              view: reducedPageView,
+            }
+          : { type: 'overlay', root: document.body }
+        const startedWithFallback = await prepareBetween(run, reducedScope)
+
+        if (!startedWithFallback) {
+          setRunPhase(run, 'navigating')
+        } else {
+          await waitForBetweenAppearance(run)
+          assertRunCurrent(run)
+        }
+
+        await commitOnce(run, false, transition.type === 'page', true)
         assertRunCurrent(run)
+        const incomingReducedView = reducedPageView
+          ? viewRef.current ?? reducedPageView
+          : viewRef.current
+        const hasIncomingBetween = getIncomingBetweenRegistrations(
+          run,
+          betweenRegistrationsRef.current.values(),
+        ).length > 0
+
+        if (
+          incomingReducedView
+          && (run.betweenHandle || hasIncomingBetween)
+        ) {
+          suppressReducedView(incomingReducedView)
+        }
+
+        const incomingReducedScope: BetweenLayerScope = (
+          transition.type === 'page'
+          && incomingReducedView
+        )
+          ? {
+              preserveViewLayout: request.waitForLocationChange === false,
+              type: 'page',
+              view: incomingReducedView,
+            }
+          : reducedScope
+        await prepareBetween(run, incomingReducedScope)
+        assertRunCurrent(run)
+
+        if (transition.type === 'page') {
+          await waitForSharedScroll(
+            request,
+            run.controller.signal,
+            run.sharedScrollFallback,
+          )
+          assertRunCurrent(run)
+        }
+
+        await waitForIncomingReadiness(run)
+        assertRunCurrent(run)
+
+        await finishBetween(run)
+        assertRunCurrent(run)
+        releaseReducedView()
+        removeReducedViewCleanup()
+        const finalReducedBackground = reducedBackground as ReturnType<
+          typeof retainViewportBackground
+        > | null
+        finalReducedBackground?.cleanup()
+        removeReducedBackgroundCleanup()
         return
       }
 
@@ -1917,6 +2699,60 @@ export function RouteveilProvider({
 
         const exitPhase = transition.exit?.phase ?? null
         const enterPhase = transition.enter?.phase ?? null
+
+        if (!exitPhase && !enterPhase) {
+          releasePreviousSharedHandoffs(run)
+          setRunPhase(run, 'navigating')
+          await commitOnce(run, true, true)
+          assertRunCurrent(run)
+          return
+        }
+        let betweenBackground: ReturnType<typeof retainViewportBackground>
+          | null = null
+        let removeBetweenBackgroundCleanup: () => void = () => undefined
+        const ensurePageBetween = async (
+          view: HTMLElement,
+        ): Promise<boolean> => {
+          const hasIncomingRegistration = getIncomingBetweenRegistrations(
+            run,
+            betweenRegistrationsRef.current.values(),
+          ).length > 0
+
+          if (!run.between && !hasIncomingRegistration) {
+            return false
+          }
+
+          if (run.sharedSession) {
+            warnOnce(
+              `between-shared-elements:${run.request.expectedPath}`,
+              'Routeveil: Between rendering cannot be combined with shared elements. Between rendering was skipped for this transition.',
+            )
+            return false
+          }
+
+          if (!betweenBackground) {
+            betweenBackground = retainViewportBackground(view)
+            removeBetweenBackgroundCleanup = registerCleanup(
+              run,
+              betweenBackground.cleanup,
+            )
+          }
+
+          return prepareBetween(run, {
+            preserveViewLayout: request.waitForLocationChange === false,
+            type: 'page',
+            view,
+          })
+        }
+        const completePageBetween = async (): Promise<void> => {
+          if (run.betweenHandle) {
+            await finishBetween(run)
+            assertRunCurrent(run)
+          }
+
+          betweenBackground?.cleanup()
+          removeBetweenBackgroundCleanup()
+        }
         let incomingAnimationsPaused = false
         let incomingAnimationsReleased = false
         let releaseIncomingAnimations: () => void = () => undefined
@@ -1965,6 +2801,145 @@ export function RouteveilProvider({
             run.preloadPromise = null
           }
         }
+        const prepareIncomingPage = async (
+          releaseOutgoingView: () => void,
+          removeOutgoingViewCleanup: () => void,
+        ) => {
+          await commitOnce(run, false, true, true)
+          assertRunCurrent(run)
+
+          const enteringView = viewRef.current ?? pageView
+          claimView(run, enteringView)
+          const releaseIncomingView = enteringView === pageView
+            ? releaseOutgoingView
+            : suppressPageView(enteringView)
+          const removeIncomingViewCleanup = enteringView === pageView
+            ? removeOutgoingViewCleanup
+            : registerCleanup(run, releaseIncomingView)
+          const readiness = (async () => {
+            await waitForSharedScroll(
+              request,
+              run.controller.signal,
+              run.sharedScrollFallback,
+            )
+            assertRunCurrent(run)
+            await waitForIncomingReadiness(run)
+            assertRunCurrent(run)
+          })()
+          void readiness.catch(() => undefined)
+
+          return {
+            enteringView,
+            readiness,
+            releaseIncomingView,
+            removeIncomingViewCleanup,
+          }
+        }
+
+        const animateIncomingPage = async (
+          incoming: Awaited<ReturnType<typeof prepareIncomingPage>>,
+        ) => {
+          const {
+            enteringView,
+            releaseIncomingView,
+            removeIncomingViewCleanup,
+          } = incoming
+
+          if (!enterPhase) {
+            startIncomingAnimations()
+            releaseIncomingView()
+            removeIncomingViewCleanup()
+            return
+          }
+
+          const incomingBackground = retainViewportBackground(
+            enteringView,
+            enterPhase,
+          )
+          const removeIncomingBackgroundCleanup = registerCleanup(
+            run,
+            incomingBackground.cleanup,
+          )
+
+          setRunPhase(run, 'entering')
+          const releaseIncomingOverflow = containViewportElementOverflow(
+            enteringView,
+          )
+          const removeIncomingOverflowCleanup = registerCleanup(
+            run,
+            releaseIncomingOverflow,
+          )
+          const enterPromise = Promise.all([
+            animateViewportElementPhase(
+              enteringView,
+              enterPhase,
+              (animation) => run.animations.add(animation),
+            ),
+            animateViewportBackgroundPhase(
+              incomingBackground,
+              enterPhase,
+              (animation) => run.animations.add(animation),
+            ),
+          ]).then(([animation]) => animation)
+
+          startIncomingAnimations()
+          releaseIncomingView()
+          removeIncomingViewCleanup()
+
+          const enterAnimation = await waitForTask(
+            run,
+            enterPromise,
+            ANIMATION_WATCHDOG_MS,
+            new TransitionLifecycleError(
+              'animation-timeout',
+              'Routeveil page enter animation did not settle.',
+            ),
+            () => cancelAnimations([...run.animations]),
+          )
+          assertRunCurrent(run)
+
+          cancelAnimation(enterAnimation)
+          releaseIncomingOverflow()
+          removeIncomingOverflowCleanup()
+          incomingBackground.cleanup()
+          removeIncomingBackgroundCleanup()
+        }
+        const runPageWithoutExitAnimation = async (): Promise<void> => {
+          if (!run.between) {
+            await finishPreloadBeforePageSuppression()
+            assertRunCurrent(run)
+          }
+
+          pauseIncomingAnimations()
+          const releaseOutgoingView = suppressPageView(pageView)
+          const removeOutgoingViewCleanup = registerCleanup(
+            run,
+            releaseOutgoingView,
+          )
+
+          releasePreviousSharedHandoffs(run)
+          const startedWithFallback = await ensurePageBetween(pageView)
+
+          if (!startedWithFallback) {
+            setRunPhase(run, 'navigating')
+          } else {
+            await waitForBetweenAppearance(run)
+            assertRunCurrent(run)
+          }
+
+          const incoming = await prepareIncomingPage(
+            releaseOutgoingView,
+            removeOutgoingViewCleanup,
+          )
+          assertRunCurrent(run)
+          await ensurePageBetween(incoming.enteringView)
+          assertRunCurrent(run)
+          await incoming.readiness
+          assertRunCurrent(run)
+          await completePageBetween()
+          await animateIncomingPage(incoming)
+        }
+
         let sharedSession: SharedElementSession | null = null
         let releaseSharedSessionCleanup: () => void = () => undefined
         const sharedAnimations = new Set<Animation>()
@@ -1987,7 +2962,24 @@ export function RouteveilProvider({
         }
 
         if (
-          request.waitForLocationChange !== false
+          run.between
+          && request.waitForLocationChange !== false
+          && request.sharedElementSource
+          && sharedRegistrationsRef.current.size > 0
+          && (
+            request.sharedElements !== false
+            || getSharedScrollTargetName(request) !== null
+          )
+        ) {
+          warnOnce(
+            `between-shared-elements:${request.expectedPath}`,
+            'Routeveil: Between rendering cannot be combined with shared elements. Shared-element movement was skipped for this transition.',
+          )
+        }
+
+        if (
+          !run.between
+          && request.waitForLocationChange !== false
           && request.sharedElementSource
           && sharedRegistrationsRef.current.size > 0
         ) {
@@ -2046,125 +3038,9 @@ export function RouteveilProvider({
 
         if (!sharedSession) {
           claimView(run, pageView)
-          const prepareIncomingPage = async (
-            releaseOutgoingView: () => void,
-            removeOutgoingViewCleanup: () => void,
-          ) => {
-            await commitOnce(run, false, true, true)
-            assertRunCurrent(run)
-
-            const enteringView = viewRef.current ?? pageView
-            claimView(run, enteringView)
-            const releaseIncomingView = enteringView === pageView
-              ? releaseOutgoingView
-              : suppressPageView(enteringView)
-            const removeIncomingViewCleanup = enteringView === pageView
-              ? removeOutgoingViewCleanup
-              : registerCleanup(run, releaseIncomingView)
-
-            await waitForSharedScroll(
-              request,
-              run.controller.signal,
-              run.sharedScrollFallback,
-            )
-            assertRunCurrent(run)
-            await waitForIncomingReadiness(run)
-            assertRunCurrent(run)
-
-            return {
-              enteringView,
-              releaseIncomingView,
-              removeIncomingViewCleanup,
-            }
-          }
-
-          const animateIncomingPage = async (
-            incoming: Awaited<ReturnType<typeof prepareIncomingPage>>,
-          ) => {
-            const {
-              enteringView,
-              releaseIncomingView,
-              removeIncomingViewCleanup,
-            } = incoming
-
-            if (!enterPhase) {
-              startIncomingAnimations()
-              releaseIncomingView()
-              removeIncomingViewCleanup()
-              return
-            }
-
-            const incomingBackground = retainViewportBackground(
-              enteringView,
-              enterPhase,
-            )
-            const removeIncomingBackgroundCleanup = registerCleanup(
-              run,
-              incomingBackground.cleanup,
-            )
-
-            setRunPhase(run, 'entering')
-            const releaseIncomingOverflow = containViewportElementOverflow(
-              enteringView,
-            )
-            const removeIncomingOverflowCleanup = registerCleanup(
-              run,
-              releaseIncomingOverflow,
-            )
-            const enterPromise = Promise.all([
-              animateViewportElementPhase(
-                enteringView,
-                enterPhase,
-                (animation) => run.animations.add(animation),
-              ),
-              animateViewportBackgroundPhase(
-                incomingBackground,
-                enterPhase,
-                (animation) => run.animations.add(animation),
-              ),
-            ]).then(([animation]) => animation)
-
-            startIncomingAnimations()
-            releaseIncomingView()
-            removeIncomingViewCleanup()
-
-            const enterAnimation = await waitForTask(
-              run,
-              enterPromise,
-              ANIMATION_WATCHDOG_MS,
-              new TransitionLifecycleError(
-                'animation-timeout',
-                'Routeveil page enter animation did not settle.',
-              ),
-              () => cancelAnimations([...run.animations]),
-            )
-            assertRunCurrent(run)
-
-            cancelAnimation(enterAnimation)
-            releaseIncomingOverflow()
-            removeIncomingOverflowCleanup()
-            incomingBackground.cleanup()
-            removeIncomingBackgroundCleanup()
-          }
 
           if (!exitPhase) {
-            await finishPreloadBeforePageSuppression()
-            assertRunCurrent(run)
-            pauseIncomingAnimations()
-            const releaseOutgoingView = suppressPageView(pageView)
-            const removeOutgoingViewCleanup = registerCleanup(
-              run,
-              releaseOutgoingView,
-            )
-
-            releasePreviousSharedHandoffs(run)
-            setRunPhase(run, 'navigating')
-            const incoming = await prepareIncomingPage(
-              releaseOutgoingView,
-              removeOutgoingViewCleanup,
-            )
-            assertRunCurrent(run)
-            await animateIncomingPage(incoming)
+            await runPageWithoutExitAnimation()
             return
           }
 
@@ -2182,23 +3058,7 @@ export function RouteveilProvider({
           if (!outgoingSnapshot) {
             outgoingBackground.cleanup()
             removeOutgoingBackgroundCleanup()
-            await finishPreloadBeforePageSuppression()
-            assertRunCurrent(run)
-            pauseIncomingAnimations()
-            const releaseOutgoingView = suppressPageView(pageView)
-            const removeOutgoingViewCleanup = registerCleanup(
-              run,
-              releaseOutgoingView,
-            )
-
-            releasePreviousSharedHandoffs(run)
-            setRunPhase(run, 'navigating')
-            const incoming = await prepareIncomingPage(
-              releaseOutgoingView,
-              removeOutgoingViewCleanup,
-            )
-            assertRunCurrent(run)
-            await animateIncomingPage(incoming)
+            await runPageWithoutExitAnimation()
             return
           }
 
@@ -2235,23 +3095,45 @@ export function RouteveilProvider({
             () => cancelAnimations([...run.animations]),
           )
           pauseIncomingAnimations()
-          const incomingPreparation = prepareIncomingPage(
-            releaseOutgoingView,
-            removeOutgoingViewCleanup,
-          )
+          let incomingPreparation = run.between
+            ? null
+            : prepareIncomingPage(
+                releaseOutgoingView,
+                removeOutgoingViewCleanup,
+              )
           const exitAnimation = await exitPromise
           assertRunCurrent(run)
           await Promise.resolve()
           assertRunCurrent(run)
-          setRunPhase(run, 'navigating')
-          const incoming = await incomingPreparation
-          assertRunCurrent(run)
-
-          outgoingBackground.cleanup()
-          removeOutgoingBackgroundCleanup()
           cancelAnimation(exitAnimation)
           outgoingSnapshot.cleanup()
           removeOutgoingSnapshotCleanup()
+          const betweenView = run.between ? pageView : viewRef.current
+          const startedWithFallback = betweenView
+            ? await ensurePageBetween(betweenView)
+            : false
+
+          if (!startedWithFallback) {
+            setRunPhase(run, 'navigating')
+          } else {
+            await waitForBetweenAppearance(run)
+            assertRunCurrent(run)
+          }
+
+          incomingPreparation ??= prepareIncomingPage(
+            releaseOutgoingView,
+            removeOutgoingViewCleanup,
+          )
+          const incoming = await incomingPreparation
+          assertRunCurrent(run)
+          await ensurePageBetween(incoming.enteringView)
+          assertRunCurrent(run)
+          await incoming.readiness
+          assertRunCurrent(run)
+          await completePageBetween()
+
+          outgoingBackground.cleanup()
+          removeOutgoingBackgroundCleanup()
           await animateIncomingPage(incoming)
           return
         }
@@ -2264,15 +3146,94 @@ export function RouteveilProvider({
         )
         setRunPhase(run, exitPhase ? 'exiting' : 'navigating')
         pauseIncomingAnimations()
-
-        await commitOnce(run, true, true)
+        await commitOnce(run, false, true, true)
         assertRunCurrent(run)
         await nextPaint(run.controller.signal)
         assertRunCurrent(run)
 
         const enteringView = viewRef.current ?? pageView
+        const incomingBetweenRegistrations = getIncomingBetweenRegistrations(
+          run,
+          betweenRegistrationsRef.current.values(),
+        )
+
+        if (incomingBetweenRegistrations.length > 0) {
+          warnOnce(
+            `between-shared-elements:${request.expectedPath}`,
+            'Routeveil: Between rendering cannot be combined with shared elements. Shared-element movement was skipped for this transition.',
+          )
+
+          if (exitPhase) {
+            const sharedExitAnimation = await waitForTask(
+              run,
+              animatePhase(
+                sharedSession.getExitElement(),
+                exitPhase,
+                (animation) => run.animations.add(animation),
+              ),
+              ANIMATION_WATCHDOG_MS,
+              new TransitionLifecycleError(
+                'animation-timeout',
+                'Routeveil page exit animation did not settle.',
+              ),
+              () => cancelAnimations([...run.animations]),
+            )
+            assertRunCurrent(run)
+            cancelAnimation(sharedExitAnimation)
+          }
+
+          sharedSession.removeSnapshot()
+          cleanupSharedSession()
+          claimView(run, enteringView)
+          const releaseIncomingView = suppressPageView(enteringView)
+          const removeIncomingViewCleanup = registerCleanup(
+            run,
+            releaseIncomingView,
+          )
+          const startedBetween = await ensurePageBetween(enteringView)
+          assertRunCurrent(run)
+
+          if (startedBetween) {
+            await waitForBetweenAppearance(run)
+            assertRunCurrent(run)
+          } else {
+            setRunPhase(run, 'navigating')
+          }
+
+          const readiness = (async () => {
+            await waitForSharedScroll(
+              request,
+              run.controller.signal,
+              true,
+            )
+            assertRunCurrent(run)
+            await waitForIncomingReadiness(run)
+            assertRunCurrent(run)
+          })()
+          void readiness.catch(() => undefined)
+          const incoming = {
+            enteringView,
+            readiness,
+            releaseIncomingView,
+            removeIncomingViewCleanup,
+          }
+
+          await readiness
+          assertRunCurrent(run)
+          await completePageBetween()
+          await animateIncomingPage(incoming)
+          return
+        }
+
         claimView(run, enteringView)
         sharedSession.suppressView(enteringView)
+        const sharedReadiness = waitForIncomingReadiness(run).catch((error) => {
+          if (run.controller.signal.aborted) {
+            return
+          }
+
+          throw error
+        })
         const sharedTargetDeadline = run.sharedTargetDeadline
           ?? Date.now() + SHARED_TARGET_WATCHDOG_MS
         run.sharedTargetDeadline = sharedTargetDeadline
@@ -2450,25 +3411,34 @@ export function RouteveilProvider({
             setRunPhase(run, 'navigating')
           })
 
-          if (movementReady) {
-            const results = await Promise.all([
-              exitTask,
-              runSharedMovement(),
-            ])
-
-            movementCompleted = results[1]
-          } else {
-            await exitTask
-          }
+          const movementTask = movementReady
+            ? runSharedMovement()
+            : Promise.resolve(false)
+          await exitTask
+          assertRunCurrent(run)
+          await ensurePageBetween(enteringView)
+          assertRunCurrent(run)
+          const results = await Promise.all([
+            sharedReadiness,
+            movementTask,
+          ])
+          movementCompleted = results[1]
         } else {
           activeSharedSession.removeSnapshot()
-
-          if (movementReady) {
-            movementCompleted = await runSharedMovement()
-          }
+          const movementTask = movementReady
+            ? runSharedMovement()
+            : Promise.resolve(false)
+          await ensurePageBetween(enteringView)
+          assertRunCurrent(run)
+          const results = await Promise.all([
+            sharedReadiness,
+            movementTask,
+          ])
+          movementCompleted = results[1]
         }
 
         assertRunCurrent(run)
+        await completePageBetween()
         keepSharedSessionThroughEnter = movementCompleted
 
         for (const animation of sharedAnimations) {
@@ -2558,8 +3528,34 @@ export function RouteveilProvider({
         assertRunCurrent(run)
 
         releasePreviousSharedHandoffs(run)
-        setRunPhase(run, 'navigating')
-        await commitOnce(run)
+        const overlayRoot = overlayRootRef.current?.id === run.id
+          ? overlayRootRef.current.element
+          : null
+        const overlayScope = overlayRoot
+          ? { type: 'overlay' as const, root: overlayRoot }
+          : null
+        const startedWithFallback = overlayScope
+          ? await prepareBetween(run, overlayScope)
+          : false
+
+        if (!startedWithFallback) {
+          setRunPhase(run, 'navigating')
+        } else {
+          await waitForBetweenAppearance(run)
+          assertRunCurrent(run)
+        }
+
+        await commitOnce(run, false, false, true)
+        assertRunCurrent(run)
+
+        if (overlayScope) {
+          await prepareBetween(run, overlayScope)
+          assertRunCurrent(run)
+        }
+
+        await waitForIncomingReadiness(run)
+        assertRunCurrent(run)
+        await finishBetween(run)
         assertRunCurrent(run)
 
         setRunPhase(run, 'revealing')
@@ -2608,11 +3604,14 @@ export function RouteveilProvider({
     assertRunCurrent,
     commitOnce,
     finalizeRun,
+    finishBetween,
     isRunCurrent,
+    prepareBetween,
     prepareOverlay,
     resolvedTransitions,
     setRunPhase,
     stopVisualWork,
+    waitForBetweenAppearance,
     waitForIncomingReadiness,
     waitForSharedTargets,
   ])
@@ -2658,6 +3657,7 @@ export function RouteveilProvider({
       settlePublicPromise = resolve
     })
     const startingLocation = observedLocationRef.current
+    const between = normalizeBetweenInput(request.between)
     const run: TransitionRun = {
       id: ++runIdRef.current,
       request,
@@ -2672,6 +3672,18 @@ export function RouteveilProvider({
       viewOwnerships: [],
       overlayHandle: null,
       overlayReset: false,
+      between,
+      betweenAppearancePhase: null,
+      betweenDisappearancePhase: null,
+      betweenHandle: null,
+      betweenReset: false,
+      betweenReleased: false,
+      betweenStartedAt: null,
+      betweenAppearance: null,
+      betweenAppearanceComplete: false,
+      betweenContentPromise: Promise.resolve(),
+      betweenVisibleToken: null,
+      betweenVisibleVersion: null,
       previousFocus: captureFocusedElement(),
       finalized: false,
       workReleased: false,
@@ -2712,21 +3724,29 @@ export function RouteveilProvider({
       transitionTo,
       defaultPreload: preload,
       preloadRoute,
+      captureBetween,
+      registerBetween,
+      registerOverlayRoot,
       registerPendingWork,
       registerView,
       registerOverlayHandle,
       registerSharedElement,
+      updateBetween,
     }),
     [
       activeOverlay,
+      captureBetween,
       phase,
       preload,
       preloadRoute,
+      registerBetween,
       registerOverlayHandle,
+      registerOverlayRoot,
       registerPendingWork,
       registerSharedElement,
       registerView,
       transitionTo,
+      updateBetween,
     ],
   )
 
@@ -2734,6 +3754,20 @@ export function RouteveilProvider({
     <RouteveilContext.Provider value={contextValue}>
       {children}
       <RouteveilOverlayPortal />
+      {activeBetween
+        ? (
+            <RouteveilBetweenLayer
+              appearancePhase={activeBetween.appearancePhase}
+              disappearancePhase={activeBetween.disappearancePhase}
+              fallback={activeBetween.fallback?.content}
+              hasFallback={activeBetween.fallback !== null}
+              id={activeBetween.id}
+              reducedMotion={activeBetween.reducedMotion}
+              registerHandle={registerBetweenHandle}
+              scope={activeBetween.scope}
+            />
+          )
+        : null}
     </RouteveilContext.Provider>
   )
 }

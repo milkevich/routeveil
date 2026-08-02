@@ -1,4 +1,5 @@
 import { Component, createElement } from 'react'
+import type { ReactPortal } from 'react'
 import type {
   AnimationPhaseDefinition,
   BuiltInOverlayTransitionName,
@@ -28,6 +29,8 @@ import type {
   PixelOrigin,
   PixelOverlayOptions,
   RadialOrigin,
+  RouteveilBetweenInput,
+  RouteveilBetweenProps,
   RouteveilLinkProps,
   RouteveilNavigate,
   RouteveilNavigateOptions,
@@ -58,6 +61,7 @@ import type {
   WipeOverlayOptions,
 } from 'routeveil/react-router'
 import {
+  RouteveilBetween,
   RouteveilLink,
   RouteveilProvider,
   RouteveilSharedElement,
@@ -75,6 +79,7 @@ type Equal<TLeft, TRight> =
 type Expect<TValue extends true> = TValue
 
 export const routeveilApi = {
+  RouteveilBetween,
   RouteveilLink,
   RouteveilProvider,
   RouteveilSharedElement,
@@ -103,6 +108,8 @@ export const classOverlayRegistry = {
 } satisfies NonNullable<RouteveilProviderProps['transitions']>
 
 export type ConsumerLinkProps = RouteveilLinkProps
+export type ConsumerBetweenInput = RouteveilBetweenInput
+export type ConsumerBetweenProps = RouteveilBetweenProps
 export type ConsumerRotateDirection = RotateDirection
 export type ConsumerRotateOptions = RotateTransitionOptions
 export type ConsumerRotateLinkProps = RouteveilLinkProps<'rotate'>
@@ -142,6 +149,8 @@ export type ConsumerPublicTypes = {
   pixelOptions: PixelOverlayOptions
   playOptions: RouteveilPlayOptions
   providerProps: RouteveilProviderProps
+  betweenInput: RouteveilBetweenInput
+  betweenProps: RouteveilBetweenProps
   sharedElementProps: RouteveilSharedElementProps
   sharedElementsOption: SharedElementsOption
   radialOrigin: RadialOrigin
@@ -198,6 +207,15 @@ export type IrisRejectsCornerOrigin = Expect<Equal<
 >>
 
 type RemovedTransitionOptionsKey = `transition${'Options'}`
+type BetweenConfiguration = Extract<
+  RouteveilBetweenInput,
+  { content: unknown }
+>
+type UnsupportedBetweenConfigurationKey =
+  | 'children'
+  | 'element'
+  | 'render'
+  | 'while'
 
 type LinkTransitionFor<
   TTransition extends RouteveilTransition,
@@ -291,6 +309,65 @@ export type RemovedPlayOptionIsInvalid = Expect<Equal<
   Extract<keyof RouteveilPlayOptions, RemovedTransitionOptionsKey>,
   never
 >>
+export type BetweenElementShorthandIsValid = Expect<Equal<
+  ReturnType<typeof createElement> extends RouteveilBetweenInput ? true : false,
+  true
+>>
+export type BetweenPortalShorthandIsValid = Expect<Equal<
+  ReactPortal extends RouteveilBetweenInput ? true : false,
+  true
+>>
+export type BetweenConfigurationIsValid = Expect<Equal<
+  {
+    content: ReturnType<typeof createElement>
+    minDuration: number
+  } extends RouteveilBetweenInput ? true : false,
+  true
+>>
+export type BetweenConfigurationRequiresContent = Expect<Equal<
+  { minDuration: number } extends RouteveilBetweenInput ? true : false,
+  false
+>>
+export type BetweenConfigurationRejectsUnsupportedKeys = Expect<Equal<
+  Extract<keyof BetweenConfiguration, UnsupportedBetweenConfigurationKey>,
+  never
+>>
+export type BetweenComponentRequiresContent = Expect<Equal<
+  Record<never, never> extends RouteveilBetweenProps ? true : false,
+  false
+>>
+export type BetweenComponentWhileIsBoolean = Expect<Equal<
+  NonNullable<RouteveilBetweenProps['while']>,
+  boolean
+>>
+export type BetweenComponentMinDurationIsNumeric = Expect<Equal<
+  NonNullable<RouteveilBetweenProps['minDuration']>,
+  number
+>>
+export type BetweenComponentRejectsChildren = Expect<Equal<
+  Extract<keyof RouteveilBetweenProps, 'children'>,
+  never
+>>
+export type LinkSupportsBetween = Expect<Equal<
+  NonNullable<RouteveilLinkProps['between']>,
+  Exclude<RouteveilBetweenInput, null | undefined>
+>>
+export type NavigateSupportsBetween = Expect<Equal<
+  NonNullable<RouteveilNavigateOptions['between']>,
+  Exclude<RouteveilBetweenInput, null | undefined>
+>>
+export type PlaybackSupportsBetween = Expect<Equal<
+  NonNullable<RouteveilPlayOptions['between']>,
+  Exclude<RouteveilBetweenInput, null | undefined>
+>>
+export type ProviderRejectsBetween = Expect<Equal<
+  Extract<keyof RouteveilProviderProps, 'between'>,
+  never
+>>
+export type PublicPhaseIncludesBetween = Expect<Equal<
+  Extract<RouteveilPhase, 'between'>,
+  'between'
+>>
 export type CustomTransitionConfigIsValid = Expect<Equal<
   {
     name: 'brand-turn'
@@ -345,6 +422,39 @@ export const rotateLink = RouteveilLink({
   to: '/',
   transition: { name: 'rotate', direction: 'right' },
 })
+
+export const betweenElement = createElement(RouteveilBetween, {
+  content: createElement('strong', null, 'Loading'),
+})
+
+export const betweenElementWithOptions = createElement(RouteveilBetween, {
+  content: createElement('strong', null, 'Loading'),
+  minDuration: 500,
+  while: true,
+})
+
+export const shorthandBetweenLink = RouteveilLink({
+  between: createElement('strong', null, 'Loading'),
+  to: '/',
+  transition: 'fade',
+})
+
+export const configuredBetweenLink = RouteveilLink({
+  between: {
+    content: createElement('strong', null, 'Loading'),
+    minDuration: 500,
+  },
+  to: '/',
+  transition: 'fade',
+})
+
+export const configuredBetweenNavigateOptions = {
+  between: {
+    content: createElement('strong', null, 'Loading'),
+    minDuration: 500,
+  },
+  transition: 'fade',
+} satisfies RouteveilNavigateOptions<'fade'>
 
 export const smoothScrollLink = RouteveilLink({
   scrollToSharedElement: 'consumer-example',
@@ -512,6 +622,7 @@ export function checkRotateNavigate(navigate: RouteveilNavigate): void {
   })
 
   void navigate('/', {
+    between: createElement('strong', null, 'Loading'),
     preventScrollReset: true,
     scrollToSharedElement: 'consumer-example',
     smoothScrollToTop: true,
@@ -521,6 +632,12 @@ export function checkRotateNavigate(navigate: RouteveilNavigate): void {
 
 export function checkPlayback(play: RouteveilPlay): void {
   void play('fade')
+  void play('fade', {
+    between: {
+      content: createElement('strong', null, 'Loading'),
+      minDuration: 500,
+    },
+  })
   void play({ name: 'slide', direction: 'left' })
   void play({ exit: 'fade', enter: 'slide' })
   void play(

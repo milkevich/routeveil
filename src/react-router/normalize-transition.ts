@@ -36,6 +36,7 @@ export type NormalizedPagePhase = {
   definition: PageTransitionDefinition
   options: unknown
   phase: AnimationPhaseDefinition
+  betweenPhase: AnimationPhaseDefinition
 }
 
 export type NormalizedPageTransition = {
@@ -133,6 +134,7 @@ function resolvePagePhase(
       definition,
       options: parsed.options,
       phase: resolved[phase],
+      betweenPhase: resolved[phase === 'exit' ? 'enter' : 'exit'],
     }
   } catch (error) {
     issues.push({
@@ -192,12 +194,14 @@ function normalizeCompleteTransition(
         definition,
         options: parsed.options,
         phase: resolved.exit,
+        betweenPhase: resolved.enter,
       },
       enter: {
         name: parsed.name,
         definition,
         options: parsed.options,
         phase: resolved.enter,
+        betweenPhase: resolved.exit,
       },
       issues,
     }

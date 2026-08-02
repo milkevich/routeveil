@@ -7,6 +7,7 @@
 - [Website](https://www.routeveil.dev/): Project overview.
 - [Documentation](https://www.routeveil.dev/docs): Installation, quick start, API, transitions, options, and reduced-motion behavior.
 - [Interactive laboratory](https://www.routeveil.dev/lab): Built-in page and overlay transition demonstrations.
+- [Between-render laboratory](https://www.routeveil.dev/lab/between): Same-page page and overlay transition previews with controlled between content and minimum timing.
 - [Shared elements playground](https://www.routeveil.dev/lab/shared-elements): Image transitions between real gallery and detail routes.
 - [GitHub repository](https://github.com/milkevich/routeveil): Source code, issues, and README.
 - [npm package](https://www.npmjs.com/package/routeveil): Published package metadata and versions.
@@ -42,10 +43,26 @@ React Router 5, React Router 8, React Router DOM versions below 6.27.0, and unte
 
 - `RouteveilProvider`: Coordinates transitions and navigation commits.
 - `RouteveilView`: Marks the routed region used by page transitions.
+- `RouteveilBetween`: Registers incoming content, holds, and minimum timing for the active between phase.
 - `RouteveilSharedElement`: Marks one real DOM visual for automatic name-based sharing across page-transition routes.
-- `RouteveilLink`: Adds an optional typed transition and shared-element scroll anchor to React Router links.
-- `useRouteveilNavigate`: Performs transition-aware programmatic navigation with the same scroll options.
-- `useRouteveilTransition`: Plays a transition without changing the route.
+- `RouteveilLink`: Adds an optional typed transition, navigation-level `between` fallback, and shared-element scroll anchor to React Router links.
+- `useRouteveilNavigate`: Performs transition-aware programmatic navigation with the same `between` and scroll options.
+- `useRouteveilTransition`: Plays a transition with optional between content without changing the route.
+
+## Between rendering
+
+- `between={<BrandLogo />}` provides fallback content before the incoming route renders.
+- `between={{ content: <BrandLogo />, minDuration: 500 }}` adds a minimum duration measured from the start of between appearance.
+- `<RouteveilBetween content={<LoadingStatus />} while={isLoading} minDuration={500} />` lets the incoming route replace the fallback and hold enter or reveal.
+- Navigation-level page content follows `exit → between → navigate and prepare → enter`; navigation-level overlay content follows `cover → between → navigate and prepare → reveal`.
+- With only an incoming `RouteveilBetween`, navigation happens first; between content then appears before enter or reveal.
+- The newest incoming registration supplies visible content. All active incoming registrations contribute their `while` and `minDuration` requirements; stale outgoing registrations do not participate.
+- Page between content appears using the outgoing transition and disappears using the incoming transition. Routeveil uses each transition's complementary phase. Overlays retain cover and reveal while the between layer handles appearance and disappearance.
+- Routeveil does not center or make between content fullscreen. Content controls its own height and alignment; application CSS may use `min-height: 100vh` when a fullscreen visual is intentional.
+- Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement. If shared movement has already started, Routeveil skips a later incoming between layer.
+- While active, `RouteveilView` exposes `data-routeveil-phase="between"`.
+- Reduced motion skips transition motion while preserving content, scope, holds, minimum timing, readiness, and cleanup.
+- Without a selected Routeveil transition, `between` does not create a lifecycle. Same-page `useRouteveilTransition` playback supports `between` and `minDuration` without remounting or changing scroll.
 
 ## Interrupted navigation
 
@@ -53,14 +70,15 @@ React Router 5, React Router 8, React Router DOM versions below 6.27.0, and unte
 - Additional Routeveil links, navigation-hook calls, and playback requests receive the active promise without queueing or committing another destination.
 - Browser Back and Forward, ordinary React Router navigation, plain links, and direct history changes cancel current visual work and leave the latest external location in control.
 - Successful and external route changes preserve meaningful application focus or focus the incoming `RouteveilView` with `preventScroll`; playback and failed unchanged navigation restore prior focus when appropriate.
-- Every run cleans up its animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.
+- Every run cleans up its animations, between and overlay layers, inert state, temporary attributes, timers, location waiters, and transition phase.
 - Routeveil does not currently support cancellation and replacement, request queues, or last-request-wins concurrency.
 
 ## Shared elements
 
 - Shared elements are a page-transition capability, not a transition name.
 - Wrap one real HTML or SVG child with `RouteveilSharedElement` and use the same unique `name` on both routes.
-- The lifecycle is strictly sequential: page exit → shared-element movement → page enter.
+- Shared movement may overlap page exit. Page enter always waits until movement finishes.
+- Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement; if movement has already started, Routeveil skips a later incoming between layer.
 - Each settled clone stays over its hidden real target throughout page enter, then hands off and cleans up after enter completes.
 - A clicked `RouteveilLink` selects only shared elements inside it or containing it. An unrelated link starts no shared-element session.
 - Programmatic navigation uses `scrollToSharedElement` as a source hint, then falls back only when the active view has exactly one valid candidate.

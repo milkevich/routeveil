@@ -10,6 +10,7 @@ import {
   useLocation,
 } from 'react-router-dom'
 import {
+  RouteveilBetween,
   RouteveilLink,
   RouteveilProvider,
   RouteveilSharedElement,
@@ -34,9 +35,16 @@ let reducedMotion = false
 let animationCalls = 0
 let animationCancellations = 0
 let animationRecords: Array<{
+  betweenLayout: string | null
   element: Element
+  hasFallback: boolean
+  hasIncoming: boolean
   keyframes: Keyframe[] | PropertyIndexedKeyframes | null
 }> = []
+const getAnimationsDescriptor = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  'getAnimations',
+)
 
 function createAnimation(): Animation {
   return {
@@ -87,6 +95,7 @@ function Controls() {
   return (
     <nav>
       <RouteveilLink
+        between={<span data-between-fallback="true">Fallback content</span>}
         data-action="page"
         to="/page?tab=api#section"
         transition="fade"
@@ -134,6 +143,17 @@ function Controls() {
         Playback
       </button>
       <button
+        data-action="page-playback"
+        onClick={() => {
+          void play('push', {
+            between: <span data-between-playback="true">Playback content</span>,
+          })
+        }}
+        type="button"
+      >
+        Page playback
+      </button>
+      <button
         data-action="shared-exit-only"
         onClick={() => {
           void navigate('/shared-exit-only', {
@@ -169,7 +189,21 @@ function DeclarativeApp() {
         <RouteveilView>
           <Routes>
             <Route element={<Page name="Home" />} path="/" />
-            <Route element={<Page name="Page" />} path="/page" />
+            <Route
+              element={(
+                <>
+                  <RouteveilBetween
+                    content={(
+                      <span data-between-incoming="true">Incoming content</span>
+                    )}
+                    minDuration={0}
+                    while={false}
+                  />
+                  <Page name="Page" />
+                </>
+              )}
+              path="/page"
+            />
             <Route element={<Page name="Overlay" />} path="/overlay" />
             <Route element={<Page name="Plain" />} path="/plain" />
             <Route element={<Page name="Modified" />} path="/modified" />
@@ -275,6 +309,7 @@ function expectClean(container: ParentNode): void {
   expect(view.inert).toBe(false)
   expect(page.dataset.sharedRef).toBe('attached')
   expect(document.querySelector('[data-routeveil-overlay-root]')).toBeNull()
+  expect(document.querySelector('[data-routeveil-between-root]')).toBeNull()
   expect(document.querySelector('[data-routeveil-shared-portal]')).toBeNull()
 }
 
@@ -307,9 +342,20 @@ describe('packed Routeveil compatibility', () => {
         keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
       ) {
         animationCalls += 1
-        animationRecords.push({ element: this, keyframes })
+        animationRecords.push({
+          betweenLayout: this.closest('[data-routeveil-between-root]')
+            ?.getAttribute('data-routeveil-between-layout') ?? null,
+          element: this,
+          hasFallback: this.querySelector('[data-between-fallback]') !== null,
+          hasIncoming: this.querySelector('[data-between-incoming]') !== null,
+          keyframes,
+        })
         return createAnimation()
       },
+    })
+    Object.defineProperty(Element.prototype, 'getAnimations', {
+      configurable: true,
+      value: () => [],
     })
 
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
@@ -340,6 +386,15 @@ describe('packed Routeveil compatibility', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    if (getAnimationsDescriptor) {
+      Object.defineProperty(
+        Element.prototype,
+        'getAnimations',
+        getAnimationsDescriptor,
+      )
+    } else {
+      Reflect.deleteProperty(Element.prototype, 'getAnimations')
+    }
     document.body.replaceChildren()
   })
 
@@ -369,6 +424,41 @@ describe('packed Routeveil compatibility', () => {
     expect(animationCalls).toBeGreaterThan(0)
     expect(animationCancellations).toBeGreaterThan(0)
     await overlayApp.unmount()
+  })
+
+  it('runs fallback and incoming between content and cleans up its layer', async () => {
+    const app = await render(<DeclarativeApp />)
+    const animationStart = animationRecords.length
+
+    await click(findElement(app.container, '[data-action="page"]'))
+    await waitFor(() => {
+      expect(findElement(app.container, '[data-location]').textContent).toContain(
+        '/page?tab=api#section',
+      )
+      expectClean(app.container)
+    })
+
+    const betweenAnimations = animationRecords.slice(animationStart).filter(
+      ({ element }) => (
+        element.hasAttribute('data-routeveil-between-root')
+        || element.hasAttribute('data-routeveil-between-motion')
+        || element.hasAttribute('data-routeveil-between-fallback')
+        || element.hasAttribute('data-routeveil-between-registration')
+      ),
+    )
+    const betweenKeyframes = betweenAnimations.flatMap(({ keyframes }) => (
+      Array.isArray(keyframes) ? keyframes : []
+    ))
+
+    expect(betweenAnimations.length).toBeGreaterThanOrEqual(3)
+    expect(betweenAnimations.some(({ hasFallback }) => hasFallback)).toBe(true)
+    expect(betweenAnimations.some(({ hasIncoming }) => hasIncoming)).toBe(true)
+    expect(betweenKeyframes.some((frame) => frame.opacity === 0)).toBe(true)
+    expect(betweenKeyframes.some((frame) => frame.opacity === 1)).toBe(true)
+    expect(document.querySelector('[data-routeveil-between-root]')).toBeNull()
+    expect(document.querySelector('[data-between-fallback]')).toBeNull()
+    expect(document.querySelector('[data-between-incoming]')).toBeNull()
+    await app.unmount()
   })
 
   it('preserves ordinary navigation and native modifier clicks', async () => {
@@ -492,6 +582,26 @@ describe('packed Routeveil compatibility', () => {
     })
 
     expect(window.location.pathname).toBe('/')
+    await app.unmount()
+  })
+
+  it('preserves route layout for page playback with between content', async () => {
+    const app = await render(<DeclarativeApp />)
+    const historyLength = window.history.length
+    const animationStart = animationRecords.length
+
+    await click(findElement(app.container, '[data-action="page-playback"]'))
+    await waitFor(() => {
+      expectClean(app.container)
+    })
+
+    const playbackAnimations = animationRecords.slice(animationStart)
+
+    expect(playbackAnimations.some(({ betweenLayout }) => (
+      betweenLayout === 'preserve'
+    ))).toBe(true)
+    expect(window.location.pathname).toBe('/')
+    expect(window.history.length).toBe(historyLength)
     await app.unmount()
   })
 

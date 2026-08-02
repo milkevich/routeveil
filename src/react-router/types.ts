@@ -216,8 +216,22 @@ export type RouteveilPhase =
   | 'exiting'
   | 'covering'
   | 'navigating'
+  | 'between'
   | 'entering'
   | 'revealing'
+
+export type RouteveilBetweenInput =
+  | ReactNode
+  | Readonly<{
+      content: ReactNode
+      minDuration?: number
+    }>
+
+export type RouteveilBetweenProps = {
+  content: ReactNode
+  while?: boolean
+  minDuration?: number
+}
 
 export type RouteveilProviderProps = {
   children: ReactNode
@@ -247,6 +261,7 @@ export type RouteveilLinkProps<
   TTransition extends TransitionName = TransitionName,
 > = LinkProps & {
   transition?: RouteveilTransition<TTransition>
+  between?: RouteveilBetweenInput
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
@@ -257,6 +272,7 @@ export type RouteveilNavigateOptions<
   TTransition extends TransitionName = TransitionName,
 > = NavigateOptions & {
   transition?: RouteveilTransition<TTransition>
+  between?: RouteveilBetweenInput
   smoothScrollToTop?: boolean
   scrollToSharedElement?: string
   sharedElements?: SharedElementsOption
@@ -272,6 +288,7 @@ export type RouteveilNavigate = <
 ) => Promise<void>
 
 export type RouteveilPlayOptions = {
+  between?: RouteveilBetweenInput
   clickPosition?: ClickPosition
 }
 

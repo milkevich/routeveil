@@ -7,7 +7,7 @@ import compatibility from '../../data/compatibility.json'
 export const siteOrigin = 'https://www.routeveil.dev'
 export const repositoryUrl = 'https://github.com/milkevich/routeveil'
 export const npmPackageUrl = 'https://www.npmjs.com/package/routeveil'
-export const socialImageUrl = `${siteOrigin}/og-image-v2.png`
+export const socialImageUrl = `${siteOrigin}/og-image-v3.png`
 export const documentLocationChangeEvent = 'routeveil:document-location-change'
 export const structuredDataElementId = 'routeveil-structured-data'
 const licenseUrl = 'https://spdx.org/licenses/MIT.html'
@@ -31,26 +31,26 @@ const docsSectionDescriptions: Record<DocsSectionId, string> = {
     'Configure RouteveilProvider defaults, custom transitions, reduced motion, and navigation behavior.',
   'routeveil-link':
     'Use RouteveilLink to choose transitions and typed options for individual React Router navigations.',
-  'route-preloading':
-    'Preload matching React Router lazy route modules before transitioned navigation begins.',
   'routeveil-view':
     'Use RouteveilView to define the routed content animated by Routeveil while persistent interface stays mounted.',
   'programmatic-navigation':
     'Navigate with transitions in code using useRouteveilNavigate, React Router options, and scroll controls.',
-  'transition-playback':
-    'Preview Routeveil page and overlay effects without changing the current React Router location.',
+  'route-preloading':
+    'Preload matching React Router lazy route modules before transitioned navigation begins.',
   'route-readiness':
     'Register incoming visual work that Routeveil should await before enter or reveal.',
-  'interrupted-navigation':
-    'Learn how Routeveil handles concurrent requests, browser history interruptions, focus, and deterministic transition cleanup.',
+  'between-rendering':
+    'Display controlled React content between exit or cover and enter or reveal, with incoming holds and minimum timing.',
+  'transition-playback':
+    'Preview Routeveil page and overlay effects with optional between content without changing the current React Router location.',
   'page-transitions':
     'Explore Routeveil page transitions including fade, blur, slide, spin, rotate, bounce, push, and pull.',
   'shared-elements':
-    'Connect matching visuals across React Router routes with sequential page exit, shared movement, and page enter phases.',
+    'Connect matching visuals across React Router routes while shared movement may overlap page exit and always settles before page enter.',
   'overlay-transitions':
     'Explore Routeveil overlays including pixel, wipe, iris, halo, tunnel, clock, mosaic, and dissolve.',
-  'configuring-transitions':
-    'Configure Routeveil transition direction, duration, easing, colors, origins, grids, stagger, and other typed options.',
+  'interrupted-navigation':
+    'Learn how Routeveil handles concurrent requests, browser history interruptions, focus, and deterministic transition cleanup.',
   'reduced-motion':
     'Learn how Routeveil respects reduced-motion preferences while completing React Router navigation safely.',
 }
@@ -85,6 +85,15 @@ const labMetadata: RouteMetadata = {
   description:
     'Preview and customize Routeveil built-in React Router page and full-screen overlay transitions in the interactive laboratory.',
   canonicalUrl: `${siteOrigin}/lab`,
+  robots: indexRobots,
+  openGraphType: 'website',
+}
+
+const betweenDemoMetadata: RouteMetadata = {
+  title: 'Routeveil Between Render Lab - React Router Transitions',
+  description:
+    'Preview Routeveil page and overlay transitions with custom between content, controlled timing, and same-page playback.',
+  canonicalUrl: `${siteOrigin}/lab/between`,
   robots: indexRobots,
   openGraphType: 'website',
 }
@@ -135,6 +144,10 @@ function decodeHash(hash: string): string {
   }
 }
 
+function isBetweenDemoPath(pathname: string): boolean {
+  return pathname === '/lab/between' || pathname === '/lab/between/'
+}
+
 export function resolveDocumentMetadata(
   pathname: string,
   hash = '',
@@ -145,6 +158,10 @@ export function resolveDocumentMetadata(
 
   if (pathname === '/lab' || pathname === '/lab/') {
     return labMetadata
+  }
+
+  if (isBetweenDemoPath(pathname)) {
+    return betweenDemoMetadata
   }
 
   if (pathname === '/lab/shared-elements') {
@@ -206,6 +223,7 @@ function createCommonStructuredData(): StructuredDataNode[] {
         'Per-navigation React Router transitions',
         'Typed transition-specific options',
         'Page and full-screen overlay effects',
+        'Controlled between-render content and readiness holds',
         'Shared-element movement composed with page transitions',
         'Programmatic navigation and transition playback hooks',
         'Deterministic interrupted-navigation cleanup and focus handling',
@@ -291,6 +309,7 @@ export function resolveStructuredData(
   } else if (
     pathname === '/lab'
     || pathname === '/lab/'
+    || isBetweenDemoPath(pathname)
     || pathname === '/lab/shared-elements'
     || pathname === '/lab/shared-elements/detail'
   ) {
@@ -305,7 +324,9 @@ export function resolveStructuredData(
       metadata.canonicalUrl,
       pathname === '/lab' || pathname === '/lab/'
         ? 'Laboratory'
-        : 'Shared Elements Demo',
+        : isBetweenDemoPath(pathname)
+          ? 'Between Render Demo'
+          : 'Shared Elements Demo',
     ))
   }
 

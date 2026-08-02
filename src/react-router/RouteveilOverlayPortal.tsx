@@ -1,4 +1,4 @@
-import { Component } from 'react'
+import { Component, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { OverlayAnimationHandle } from '../core/index.js'
@@ -36,7 +36,12 @@ export function RouteveilOverlayPortal() {
   const {
     activeOverlay,
     registerOverlayHandle,
+    registerOverlayRoot,
   } = useRouteveilContext()
+  const activeOverlayId = activeOverlay?.id ?? 0
+  const setRoot = useCallback((element: HTMLDivElement | null) => {
+    registerOverlayRoot(activeOverlayId, element)
+  }, [activeOverlayId, registerOverlayRoot])
 
   if (!activeOverlay || typeof document === 'undefined') {
     return null
@@ -46,6 +51,7 @@ export function RouteveilOverlayPortal() {
   return createPortal(
     <div
       data-active="true"
+      data-routeveil-overlay-id={activeOverlay.id}
       data-routeveil-overlay-root=""
       style={{
         position: 'fixed',
@@ -73,6 +79,16 @@ export function RouteveilOverlayPortal() {
           }}
         />
       </OverlayErrorBoundary>
+      <div
+        ref={setRoot}
+        data-routeveil-overlay-between-boundary=""
+        style={{
+          position: 'absolute',
+          inset: 0,
+          isolation: 'auto',
+          pointerEvents: 'none',
+        }}
+      />
     </div>,
     document.body,
   )

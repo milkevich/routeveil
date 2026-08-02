@@ -25,6 +25,14 @@ export const router = createBrowserRouter([
         }),
       },
       {
+        path: 'lab/between',
+        lazy: async () => ({
+          Component: (
+            await import('./pages/lab/between/BetweenDemoPage')
+          ).BetweenDemoPage,
+        }),
+      },
+      {
         path: 'lab/shared-elements',
         lazy: async () => ({
           Component: (

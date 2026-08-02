@@ -12,6 +12,7 @@ import {
   indexRobots,
   resolveDocumentMetadata,
   resolveStructuredData,
+  socialImageUrl,
   structuredDataElementId,
 } from '../src/app/shared/lib/documentMetadata'
 
@@ -84,6 +85,13 @@ const pages: PageDefinition[] = [
           <p>Routeveil is tested in CI across React 18 and 19 with supported React Router DOM 6 and 7 releases.</p>
           <p>React Router 5 and React Router 8 are not currently supported. <a href="https://github.com/milkevich/routeveil/blob/main/src/app/data/compatibility.json">View the exact test matrix.</a></p>
         </section>
+        <section id="between-rendering">
+          <h2>Between Rendering</h2>
+          <p>Pass between content to RouteveilLink, useRouteveilNavigate, or useRouteveilTransition. Navigation-level page content follows exit → between → navigate and prepare → enter. Navigation-level overlay content follows cover → between → navigate and prepare → reveal.</p>
+          <p>With only an incoming RouteveilBetween registration, navigation happens first; between content then appears before enter or reveal. Incoming content can replace a fallback, hold the phase with <code>while</code>, and contribute <code>minDuration</code>. Nested registrations combine requirements while the newest supplies visible content.</p>
+          <p>Content controls its own height and alignment. Page between content appears using the outgoing transition and disappears using the incoming transition; Routeveil uses each transition's complementary phase. Overlays retain cover and reveal while their between layer handles appearance and disappearance.</p>
+          <p>Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement. If shared movement has already started, Routeveil skips a later incoming between layer.</p>
+        </section>
         <section id="interrupted-navigation">
           <h2>Interrupted Navigation</h2>
           <p>Routeveil runs one transition and one active promise at a time. Additional Routeveil navigation and playback requests reuse that promise without queueing or committing another destination.</p>
@@ -92,7 +100,7 @@ const pages: PageDefinition[] = [
         <section id="shared-elements">
           <h2>Shared Elements</h2>
           <p>RouteveilSharedElement connects matching real HTML or SVG elements across routes by a unique name without adding a layout wrapper.</p>
-          <p>Shared elements compose with page transitions in a strict sequence: page exit → shared-element movement → page enter. They are not transitions named shared or shared-element. Multiple valid matches move concurrently, different tags crossfade, and each settled clone stays over its hidden real target until page enter completes. Missing or duplicate targets are skipped without blocking navigation.</p>
+          <p>Shared movement may overlap page exit, and page enter waits until movement completes. Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement; if movement has already started, Routeveil skips a later incoming between layer. Shared elements are not transitions named shared or shared-element. Multiple valid matches move concurrently, and missing or duplicate targets are skipped safely.</p>
           <p>Use scrollToSharedElement with an exact incoming shared-element name to center it vertically while preserving horizontal scroll before endpoint measurement. URL hashes take precedence; valid anchors override preventScrollReset and smoothScrollToTop, while missing or duplicate anchors warn and fall back to the existing scroll policy. Reduced-motion navigation still applies valid anchor positioning.</p>
           <p>Overlay transitions, same-page playback, browser-history navigation, and reduced-motion navigation do not run shared-element movement.</p>
           <a href="/lab/shared-elements">Open the shared elements playground</a>
@@ -118,8 +126,22 @@ const pages: PageDefinition[] = [
           <h2>Overlay transitions</h2>
           <p>Pixel, curtain, wipe, columns, rows, iris, halo, tunnel, clock, venetian, mosaic, and dissolve.</p>
         </section>
+        <a href="/lab/between">Explore between-render transitions</a>
         <a href="/lab/shared-elements">Explore shared-element transitions</a>
         <a href="/docs">Read the Routeveil documentation</a>
+      </main>
+    `,
+  },
+  {
+    file: 'lab/between.html',
+    pathname: '/lab/between',
+    fallback: `
+      <main>
+        <h1>Between Render</h1>
+        <p>Preview page and overlay transitions with custom React content displayed between their outgoing and incoming phases.</p>
+        <p>Each example runs on the current route, preserves browser history and scroll position, and keeps its content visible for a configured minimum duration.</p>
+        <a href="/docs#between-rendering">Read the between-rendering documentation</a>
+        <a href="/lab">Return to the laboratory</a>
       </main>
     `,
   },
@@ -130,7 +152,7 @@ const pages: PageDefinition[] = [
       <main>
         <h1>Shared Elements</h1>
         <p>Explore a masonry gallery of local images and open any post to preview a shared-element transition between real React Router routes.</p>
-        <p>The page transition exits first, the selected image moves to its incoming position, and the detail route enters beneath the settled clone before the real image takes over.</p>
+        <p>The selected image may begin moving while page exit is active. The detail route enters only after movement finishes, then the real image takes over.</p>
         <a href="/lab/shared-elements/detail">Open the shared elements detail</a>
         <a href="/docs#shared-elements">Read the shared elements documentation</a>
         <a href="/lab">Return to the laboratory</a>
@@ -243,13 +265,13 @@ function applyMetadata(document: Document, pathname: string) {
     document,
     'property',
     'og:image',
-    'https://www.routeveil.dev/og-image-v3.png',
+    socialImageUrl,
   )
   upsertMeta(
     document,
     'property',
     'og:image:secure_url',
-    'https://www.routeveil.dev/og-image-v3.png',
+    socialImageUrl,
   )
   upsertMeta(document, 'property', 'og:image:type', 'image/png')
   upsertMeta(document, 'property', 'og:image:width', '1200')
@@ -267,7 +289,7 @@ function applyMetadata(document: Document, pathname: string) {
     document,
     'name',
     'twitter:image',
-    'https://www.routeveil.dev/og-image-v3.png',
+    socialImageUrl,
   )
   upsertMeta(
     document,
@@ -368,12 +390,22 @@ for (const page of pages) {
       'documentation fallback is missing compatibility',
     )
     invariant(
+      Boolean(fallbackDocument.getElementById('between-rendering'))
+        && Boolean(fallbackDocument.querySelector(
+          'a[href="/docs#between-rendering"]',
+        ))
+        && fallbackDocument.body.textContent?.includes(
+          'incoming RouteveilBetween registration',
+        ),
+      'documentation fallback is missing between rendering',
+    )
+    invariant(
       Boolean(fallbackDocument.getElementById('shared-elements'))
         && Boolean(fallbackDocument.querySelector(
           'a[href="/docs#shared-elements"]',
         ))
         && fallbackDocument.body.textContent?.includes(
-          'page exit → shared-element movement → page enter',
+          'mutually exclusive',
         ),
       'documentation fallback is missing shared elements',
     )
@@ -383,8 +415,20 @@ for (const page of pages) {
     invariant(
       Boolean(fallbackDocument.querySelector(
         'a[href="/lab/shared-elements"]',
+      ))
+        && Boolean(fallbackDocument.querySelector(
+          'a[href="/lab/between"]',
+        )),
+      'laboratory fallback is missing a transition demo',
+    )
+  }
+
+  if (page.pathname === '/lab/between') {
+    invariant(
+      Boolean(fallbackDocument.querySelector(
+        'a[href="/docs#between-rendering"]',
       )),
-      'laboratory fallback is missing the shared elements demo',
+      'between-render fallback is missing its documentation link',
     )
   }
 
@@ -425,12 +469,23 @@ for (const asset of [stylesheet, moduleScript]) {
   )
 }
 
+const socialImagePath = new URL(socialImageUrl).pathname.slice(1)
+invariant(
+  await exists(resolve(buildRoot, socialImagePath)),
+  `built social image is missing: ${socialImagePath}`,
+)
+
 const sitemap = await readFile(resolve(buildRoot, 'sitemap.xml'), 'utf8')
 const robots = await readFile(resolve(buildRoot, 'robots.txt'), 'utf8')
 const llms = await readFile(resolve(buildRoot, 'llms.txt'), 'utf8')
 const llmsFull = await readFile(resolve(buildRoot, 'llms-full.txt'), 'utf8')
 
 invariant(sitemap.includes('https://www.routeveil.dev/docs'), 'sitemap is missing docs')
+invariant(
+  sitemap.includes('https://www.routeveil.dev/lab/between')
+    && !sitemap.includes('https://www.routeveil.dev/lab/between/'),
+  'sitemap between-render routes are invalid',
+)
 invariant(
   sitemap.includes('https://www.routeveil.dev/lab/shared-elements')
     && !sitemap.includes('https://www.routeveil.dev/lab/shared-elements/detail'),
@@ -472,6 +527,14 @@ invariant(
     && llmsFull.includes('Shared elements')
     && llmsFull.includes('https://www.routeveil.dev/lab/shared-elements'),
   'AI-readable references are missing shared elements',
+)
+invariant(
+  llms.includes('RouteveilBetween')
+    && llms.includes('https://www.routeveil.dev/lab/between')
+    && llmsFull.includes('RouteveilBetween')
+    && llmsFull.includes('https://www.routeveil.dev/lab/between')
+    && llmsFull.includes("data-routeveil-phase=\"between\""),
+  'AI-readable references are missing between rendering',
 )
 invariant(indexRobots.startsWith('index, follow'), 'indexing directives are invalid')
 

@@ -1,4 +1,5 @@
 export { RouteveilLink } from './RouteveilLink.js'
+export { RouteveilBetween } from './RouteveilBetween.js'
 export { RouteveilProvider } from './RouteveilProvider.js'
 export { RouteveilSharedElement } from './RouteveilSharedElement.js'
 export { RouteveilView } from './RouteveilView.js'
@@ -49,6 +50,8 @@ export type {
 } from '../core/index.js'
 export type {
   RouteveilLinkProps,
+  RouteveilBetweenInput,
+  RouteveilBetweenProps,
   RouteveilNavigate,
   RouteveilNavigateOptions,
   RouteveilTransition,

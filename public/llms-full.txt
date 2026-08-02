@@ -15,6 +15,7 @@ Canonical sources:
 - Website: https://www.routeveil.dev/
 - Documentation: https://www.routeveil.dev/docs
 - Interactive transition lab: https://www.routeveil.dev/lab
+- Between-render lab: https://www.routeveil.dev/lab/between
 - Shared-elements playground: https://www.routeveil.dev/lab/shared-elements
 - Source: https://github.com/milkevich/routeveil
 - npm: https://www.npmjs.com/package/routeveil
@@ -58,6 +59,7 @@ and untested combinations are unsupported.
 
 ```ts
 import {
+  RouteveilBetween,
   RouteveilLink,
   RouteveilProvider,
   RouteveilSharedElement,
@@ -175,8 +177,8 @@ create a zero-duration animation.
 Unknown names, invalid split overlay phases, and resolver errors do not trap the
 application. A valid split phase still runs when the other phase is invalid. If no
 valid phase remains, navigation completes without animation. Cleanup removes all
-Routeveil-owned snapshots, backgrounds, overlays, timers, animations, inert state,
-temporary attributes, and pending lifecycle state.
+Routeveil-owned snapshots, backgrounds, between and overlay layers, timers, animations,
+inert state, temporary attributes, and pending lifecycle state.
 
 ## Page transition lifecycle
 
@@ -190,14 +192,32 @@ The normal sequence is:
 6. restore visibility, interaction, focus, overflow, backgrounds, and idle state
 
 With no exit phase, Routeveil skips outgoing page animation and its related snapshot,
-retained-background animation, watchdog, and timer work. The current page remains
-visible while an unfinished preload settles, then navigation commits and the incoming
-readiness lifecycle continues.
+retained-background animation, watchdog, and timer work. Without a navigation-level
+between fallback, the current page remains visible while an unfinished preload settles.
+With a fallback, Routeveil suppresses the outgoing view, shows between content, then
+commits when preload permits. Content supplied only by the incoming route appears after
+commit.
 
 With no enter phase, Routeveil completes exit, navigation, readiness, scrolling, and
-shared-element work, then reveals the incoming route immediately and cleans up.
+whichever visual handoff applies. Active between content disappears before Routeveil
+reveals the incoming route without a page enter animation.
 
 A missing page phase does not disable shared-element movement.
+
+With navigation-level between content, the page lifecycle is
+`exit → between → navigate and prepare → enter`:
+
+1. run page exit
+2. show the fallback with the exit definition's complementary enter motion
+3. commit navigation and wait for the incoming route
+4. crossfade to the newest incoming `RouteveilBetween` content, when registered
+5. wait for readiness, every active hold, and minimum timing
+6. animate and remove between content with the enter definition's complementary exit motion
+7. run page enter
+
+With only incoming `RouteveilBetween`, navigation happens first. The registration then
+shows between content before enter or reveal. Content controls its own height and
+alignment; it does not inherit the incoming page's height.
 
 ## Overlay transition lifecycle
 
@@ -210,10 +230,15 @@ The sequence is:
 5. reveal the destination
 6. reset and remove the overlay
 
+With navigation-level between content, the overlay lifecycle is
+`cover → between → navigate and prepare → reveal`. With only incoming
+`RouteveilBetween`, navigation happens first; between content then appears before
+reveal. Cover completes before between content appears, and reveal starts after it
+disappears.
+
 Configured overlay options are passed to the renderer. A clicked
-`RouteveilLink` supplies pointer coordinates. Keyboard and programmatic requests use
-the effect's center fallback unless `useRouteveilTransition` receives an explicit
-`clickPosition`.
+`RouteveilLink` supplies pointer coordinates. Keyboard and programmatic navigation use
+the center fallback. Playback may explicitly pass `clickPosition`.
 
 ## Core components
 
@@ -240,13 +265,28 @@ Registers the one stable routed wrapper animated by page effects. Props:
 - `style?: CSSProperties`
 
 The view becomes inert during page transitions and exposes Routeveil phase and busy
-state. Cleanup restores its previous state.
+state. While between content is active, it exposes
+`data-routeveil-phase="between"`. Cleanup restores its previous state.
+
+### RouteveilBetween
+
+Registers incoming-route content for the active between phase. Props:
+
+- `content: ReactNode`
+- `while?: boolean`, defaulting to `false`
+- `minDuration?: number`, defaulting to `0`
+
+`content` is required; there is no `children` alternative. A true `while` value holds
+enter or reveal until it becomes false or the registration unmounts. `minDuration` is a
+minimum number of milliseconds from between appearance start, not an exact deadline.
+Invalid, negative, and non-finite durations normalize to `0`.
 
 ### RouteveilLink
 
 Extends React Router's `Link`. Routeveil additions:
 
 - `transition?: RouteveilTransition`
+- `between?: RouteveilBetweenInput`
 - `preload?: false | 'intent' | 'viewport' | 'render'`
 - `smoothScrollToTop?: boolean`
 - `scrollToSharedElement?: string`
@@ -269,7 +309,7 @@ or SVG element. Names must be unique within one active route view.
 ### useRouteveilNavigate
 
 Performs programmatic transition-aware navigation. It accepts React Router
-`NavigateOptions` plus `transition`, `smoothScrollToTop`,
+`NavigateOptions` plus `transition`, `between`, `smoothScrollToTop`,
 `scrollToSharedElement`, and `sharedElements`.
 
 Its promise resolves after the visual lifecycle and cleanup. Without `transition`,
@@ -278,13 +318,16 @@ animation.
 
 ### useRouteveilTransition
 
-Plays a page or overlay transition on the current route without changing URL, history,
-location state, mounted route, or scroll. Its promise resolves after cleanup.
+Plays a page or overlay transition on the current route without navigating, changing
+URL, adding history, changing location state, remounting the route, or moving scroll.
+Its promise resolves after animation and cleanup. Playback supports `between` content
+and `minDuration`.
 
 The optional second argument is:
 
 ```ts
 {
+  between?: RouteveilBetweenInput
   clickPosition?: {
     x: number
     y: number
@@ -303,15 +346,93 @@ const release = registerPendingWork(promise)
 Register work during an active destination readiness window when an incoming visual
 must settle before enter or reveal. The returned function releases the task early,
 typically during effect cleanup. Rejection counts as settled. A safety timeout prevents
-indefinite blocking.
+indefinite blocking. `<RouteveilBetween>`'s `while` prop adds a separate hold; both systems must
+release before enter or reveal.
+
+## Between rendering
+
+`RouteveilLink`, `useRouteveilNavigate`, and `useRouteveilTransition` can provide
+immediate between content in either form:
+
+```tsx
+<RouteveilLink
+  to="/dashboard"
+  transition="fade"
+  between={<BrandLogo />}
+>
+  Dashboard
+</RouteveilLink>
+
+navigate('/dashboard', {
+  transition: 'fade',
+  between: {
+    content: <BrandLogo />,
+    minDuration: 500,
+  },
+})
+```
+
+The incoming route can take control without losing its React context, state, or hooks:
+
+```tsx
+<RouteveilBetween
+  content={<LoadingStatus />}
+  while={isLoading}
+  minDuration={500}
+/>
+```
+
+The provider owns the visual layer. Each incoming component portals its live content
+into that layer while remaining in its original React tree. When supplied, the
+navigation fallback is visible first. The newest active incoming registration replaces
+it with a crossfade; if that registration unmounts, Routeveil falls back through older
+incoming registrations and finally to the navigation fallback.
+
+All active incoming registrations contribute holds and minimum durations even though
+only the newest supplies visible content. Their minimums share the original between
+start time, so content replacement does not restart the lifecycle clock. Registrations
+are matched to the committed location, preventing stale outgoing content from joining
+the run.
+
+Visible-content replacement crossfades without restarting the lifecycle or its minimum
+duration clock. Disappearance waits for appearance, route readiness, pending work,
+every active hold, and the longest applicable minimum duration.
+
+Routeveil does not impose visual layout on between content. Content controls its own
+height and alignment and is not automatically centered or fullscreen. Page between
+content does not inherit the incoming page's height. Application CSS can use
+`min-height: 100vh` for an intentional fullscreen visual; overlay content may likewise
+cover the viewport through user styles. The overlay between layer locks viewport scrolling while
+active. Content does not receive pointer interaction.
+
+Page between content appears using the outgoing transition and disappears using the
+incoming transition. Routeveil uses each transition's complementary phase. Split phases
+resolve independently. If a page phase is omitted, its page animation is absent and the
+corresponding between motion uses the layer's standard opacity fallback. Overlays retain
+cover and reveal while the overlay between layer handles appearance and disappearance.
+
+Shared movement and between rendering are mutually exclusive. Navigation-level between
+content disables shared movement. If shared movement has already started, Routeveil
+skips a later incoming between layer.
+
+Reduced motion skips Routeveil motion while preserving content, scope, holds, minimum
+timing, readiness, and cleanup.
+
+Supplying `between` without `transition` performs normal React Router navigation and
+does not create a between phase. There are no provider defaults, public fade controls,
+or source-level holds. Playback supports both between input forms.
 
 ## Shared elements
 
 Shared elements compose with page transitions. They are not transition names.
 
-When a page exit exists, shared-element movement starts with a short lead and overlaps
-the exit. Page enter starts after both finish. Without an exit phase, movement finishes
-before page enter.
+Shared-element movement may start with a short lead and overlap page exit when incoming
+preparation finishes early enough. Otherwise movement runs after exit. Without an exit
+phase, movement finishes before page enter. Page enter always waits for movement.
+
+Shared movement and between rendering are mutually exclusive. Navigation-level between
+content disables shared movement. If shared movement has already started, Routeveil
+skips a later incoming between layer.
 
 Source and destination wrappers connect by exact `name`, not tag or tree position.
 Routeveil moves a fixed, non-interactive visual clone; it does not move or replace
@@ -341,9 +462,10 @@ such as `createBrowserRouter`; declarative `BrowserRouter` does not expose a rou
 tree. Routeveil runs matching `route.lazy` functions and caches their promises. It
 does not render the destination, run component effects, or execute loaders.
 
-An active exit may overlap preloading. If there is no usable exit animation, Routeveil
-keeps the outgoing page visible while pending preload work settles. Failure or timeout
-continues navigation safely.
+An active exit may overlap preloading. If there is no usable exit animation and no
+navigation-level between fallback, Routeveil keeps the outgoing page visible while
+pending preload work settles. A fallback can occupy the between scope while preload is
+still pending. Failure or timeout continues navigation safely.
 
 ## Scroll precedence
 
@@ -385,54 +507,59 @@ still connected and application code has not moved focus elsewhere.
 ## Reduced motion
 
 Before each request, Routeveil reads `prefers-reduced-motion`. When reduction is
-requested, it skips page, overlay, and shared-element animation while preserving
-navigation, route readiness, scroll, focus, cleanup, and promise behavior.
+requested, it skips page, overlay, shared-element, and between motion while
+preserving navigation, between content and scope, holds, minimum timing, route readiness,
+scroll, focus, cleanup, and promise behavior.
 
 ## Built-in page transitions
 
-- `fade`: opacity crossfade
-- `blur`: blur and opacity
-- `slide`: directional page movement; option `direction`
-- `spin`: perspective rotation and movement; option `direction`
-- `rotate`: restrained two-dimensional turn; option `direction`
-- `bounce`: soft depth movement
-- `push`: outgoing page advances toward the viewer
-- `pull`: incoming page is drawn forward
+- `fade`: opacity crossfade; no transition-specific options
+- `blur`: blur and opacity; no transition-specific options
+- `slide`: `direction: 'up' | 'down' | 'left' | 'right'`
+- `spin`: `direction: 'up' | 'down' | 'left' | 'right'`
+- `rotate`: `direction: 'left' | 'right'`
+- `bounce`: soft depth movement; no transition-specific options
+- `push`: outgoing page advances toward the viewer; no transition-specific options
+- `pull`: incoming page is drawn forward; no transition-specific options
 
 ## Built-in overlay transitions
 
-- `pixel`: square tile field
-- `curtain`: two closing panels
-- `wipe`: one moving panel
-- `columns`: sequenced vertical strips
-- `rows`: sequenced horizontal strips
-- `iris`: circular aperture
-- `halo`: expanding solid circle
-- `tunnel`: halo cover with iris reveal
-- `clock`: radial sector sweep
-- `venetian`: dimensional rotating blinds
-- `mosaic`: seeded irregular tile field
-- `dissolve`: procedural film-grain cover
+- `pixel`: `columns`, `rows`, `color`, `origin`, `duration`, `stagger`; origins are `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center`, `random`, or `cursor`
+- `curtain`: `color`, `axis: 'horizontal' | 'vertical'`, `duration`, `easing`
+- `wipe`: `color`, `direction: 'right' | 'left' | 'down' | 'up'`, `duration`, `easing`
+- `columns`: `columns`, `count`, `direction: 'down' | 'up' | 'alternate'`, `order: 'forward' | 'reverse' | 'center'`, `color`, `duration`, `stagger`, `easing`
+- `rows`: `rows`, `count`, `direction: 'right' | 'left' | 'alternate'`, `order: 'forward' | 'reverse' | 'center'`, `color`, `duration`, `stagger`, `easing`
+- `iris`: `color`, `origin: 'cursor' | 'center'`, `duration`, `easing`
+- `halo`: `color`, `origin: 'cursor' | 'center'`, `duration`, `easing`
+- `tunnel`: `color`, `origin: 'cursor' | 'center'`, `duration`, `coverDuration`, `revealDuration`, `easing`
+- `clock`: `color`, `origin: 'cursor' | 'center'`, `direction: 'clockwise' | 'counterclockwise'`, `startAngle`, `duration`, `easing`
+- `venetian`: `color`, `direction: 'horizontal' | 'vertical'`, `count`, `alternate`, `duration`, `stagger`
+- `mosaic`: `colors`, `columns`, `rows`, `duration`, `stagger`, `rotation`, `seed`, `origin: 'cursor' | 'center' | 'random'`
+- `dissolve`: `color`, `duration`, `grainSize`, `softness`, `seed`
 
-Use the documentation and interactive lab for each overlay's exact option set.
+Most overlays accept `color`; `mosaic` accepts `colors`. `RouteveilLink` supplies pointer
+coordinates. Keyboard and programmatic navigation use the center fallback. Playback may
+explicitly pass `clickPosition`.
 
 ## TypeScript
 
 Important public types include:
 
 - `RouteveilTransition`
+- `RouteveilBetweenInput`
+- `RouteveilBetweenProps`
+- `RouteveilPhase`, including `between`
 - `TransitionConfig`
 - `PageTransitionInput`
 - `SplitTransition`
 - `TransitionName`
-- `TransitionOptionsFor<TName>`
 - `RouteveilLinkProps`
 - `RouteveilNavigateOptions`
 - `RouteveilProviderProps`
 - page, overlay, renderer, animation, option, direction, and origin definition types
 
-Keep built-in names literal to preserve transition-specific option inference. Custom
-names remain supported and custom resolver options are forwarded as flattened fields.
+Transition options are typed according to each built-in name. Custom names remain
+supported and custom resolver options are forwarded as flattened fields.
 
 ## Current scope
 
@@ -452,16 +579,16 @@ names remain supported and custom resolver options are forwarded as flattened fi
 - Compatibility: https://www.routeveil.dev/docs#compatibility
 - Provider: https://www.routeveil.dev/docs#provider
 - RouteveilLink: https://www.routeveil.dev/docs#routeveil-link
-- Route Preloading: https://www.routeveil.dev/docs#route-preloading
 - RouteveilView: https://www.routeveil.dev/docs#routeveil-view
 - Programmatic Navigation: https://www.routeveil.dev/docs#programmatic-navigation
-- Transition Playback: https://www.routeveil.dev/docs#transition-playback
+- Route Preloading: https://www.routeveil.dev/docs#route-preloading
 - Route Readiness: https://www.routeveil.dev/docs#route-readiness
-- Interrupted Navigation: https://www.routeveil.dev/docs#interrupted-navigation
+- Between Rendering: https://www.routeveil.dev/docs#between-rendering
+- Transition Playback: https://www.routeveil.dev/docs#transition-playback
 - Page Transitions: https://www.routeveil.dev/docs#page-transitions
 - Shared Elements: https://www.routeveil.dev/docs#shared-elements
 - Overlay Transitions: https://www.routeveil.dev/docs#overlay-transitions
-- Configuring Transitions: https://www.routeveil.dev/docs#configuring-transitions
+- Interrupted Navigation: https://www.routeveil.dev/docs#interrupted-navigation
 - Reduced Motion: https://www.routeveil.dev/docs#reduced-motion
 
 For versions and distribution metadata, prefer npm. For source and issues, prefer

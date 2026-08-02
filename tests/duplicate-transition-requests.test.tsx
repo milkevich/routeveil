@@ -104,6 +104,16 @@ function Controls({
       >
         Playback
       </button>
+      <button
+        onClick={() => {
+          void playTransition('push', {
+            between: <span data-playback-between="">Playback between</span>,
+          })
+        }}
+        type="button"
+      >
+        Playback with between
+      </button>
       <button onClick={() => navigate(-1)} type="button">
         Back
       </button>
@@ -389,6 +399,52 @@ describe('duplicate transition requests', () => {
     await waitForIdle(fixture.view, '/docs')
 
     expect(fixture.locations).toEqual(['/docs'])
+    expectClean(fixture.view)
+  })
+
+  it('preserves the route layout during page playback between content', async () => {
+    const fixture = renderFixture()
+    const routeView = fixture.view.container.querySelector<HTMLElement>(
+      '[data-routeveil-view]',
+    )!
+    const initialDisplay = routeView.style.display
+    const initialHistoryLength = window.history.length
+
+    browser.setAnimationObserver(null)
+    fireEvent.click(fixture.view.getByRole('button', {
+      name: 'Playback with between',
+    }))
+    await finishRunningAnimations()
+    await waitFor(() => {
+      expect(document.querySelector('[data-routeveil-between-root]'))
+        .not.toBeNull()
+    })
+
+    const betweenLayer = document.querySelector<HTMLElement>(
+      '[data-routeveil-between-root]',
+    )!
+
+    expect(routeView.style.display).toBe(initialDisplay)
+    expect(betweenLayer.dataset.routeveilBetweenLayout).toBe('preserve')
+    expect(betweenLayer.style.position).toBe('fixed')
+    expect(fixture.locations).toEqual(['/docs'])
+    expect(window.history.length).toBe(initialHistoryLength)
+    expect(browser.scrollTo).not.toHaveBeenCalled()
+
+    browser.setAnimationObserver(() => {
+      queueMicrotask(() => {
+        browser.animations.find((animation) => (
+          animation.status === 'running'
+        ))?.finish()
+      })
+    })
+    await finishRunningAnimations()
+    await waitForIdle(fixture.view, '/docs')
+
+    expect(document.querySelector('[data-routeveil-between-root]')).toBeNull()
+    expect(fixture.locations).toEqual(['/docs'])
+    expect(window.history.length).toBe(initialHistoryLength)
+    expect(browser.scrollTo).not.toHaveBeenCalled()
     expectClean(fixture.view)
   })
 

@@ -6,7 +6,7 @@
   display: grid;
   align-content: center;
   padding-bottom: 3rem;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--border);
 }
 
 .docs-hero .pixel-heading {
@@ -67,7 +67,7 @@
   overflow: hidden;
 
   background-color: var(--background);
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
   cursor: pointer;
 
   transition:
@@ -272,7 +272,7 @@
 
 .docs-sidebar {
   position: sticky;
-  top: calc(var(--header-height) + 2rem);
+  top: var(--header-height);
   max-height: calc(100vh - var(--header-height) - 4rem);
   overflow-y: auto;
   padding: 4rem 1rem 4rem 0;
@@ -286,7 +286,7 @@
   display: grid;
   min-height: 680px;
   padding: clamp(4rem, 8vw, 8rem) clamp(1.5rem, 5vw, 5rem);
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--border);
   scroll-margin-top: calc(var(--header-height) + 24px);
 }
 
@@ -337,7 +337,7 @@
 
 .doc-section code:not(pre code) {
   padding: 0.14rem 0.3rem;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
   background: #f5f5f5;
   font-family: var(--font-mono);
   font-size: 0.84em;
@@ -345,8 +345,8 @@
 
 .lifecycle-diagram {
   display: grid;
-  border-top: 1px solid #e6e6e6;
-  border-left: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -357,8 +357,8 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 1rem;
-  border-right: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .lifecycle-diagram li:not(:last-child)::after {
@@ -368,8 +368,8 @@
   right: -10px;
   width: 18px;
   height: 18px;
-  border-top: 1px solid #e6e6e6;
-  border-right: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   background: #fff;
   content: '';
   transform: translateY(-50%) rotate(45deg);
@@ -388,8 +388,8 @@
 .support-grid,
 .option-groups {
   display: grid;
-  border-top: 1px solid #e6e6e6;
-  border-left: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -398,8 +398,8 @@
 .option-groups article {
   min-height: 210px;
   padding: 1.5rem;
-  border-right: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .doc-split h3,
@@ -418,7 +418,7 @@
 
 .doc-note {
   padding: 1.5rem;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
   background: #f5f5f5;
 }
 
@@ -437,8 +437,8 @@
 
 .doc-facts {
   display: grid;
-  border-top: 1px solid #e6e6e6;
-  border-left: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -448,8 +448,8 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 1rem;
-  border-right: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .doc-facts span,
@@ -464,7 +464,7 @@
 .prop-table-wrap {
   max-width: 100%;
   overflow-x: auto;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
 }
 
 .prop-table {
@@ -488,8 +488,8 @@
 .prop-table th,
 .prop-table td {
   padding: 1rem;
-  border-right: 1px solid #e6e6e6;
-  border-top: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   vertical-align: top;
 }
 
@@ -518,7 +518,7 @@ th:last-child {
 
 .doc-inline-list li {
   padding: 0.55rem 0.75rem;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 0.7rem;
 }
@@ -537,8 +537,8 @@ th:last-child {
 
 .built-in-list {
   display: grid;
-  border-top: 1px solid #e6e6e6;
-  border-left: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   grid-template-columns: repeat(1, minmax(0, 1fr));
 }
 
@@ -552,8 +552,8 @@ th:last-child {
   padding: 1rem;
   border-top: 0;
   border-left: 0;
-  border-right: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: #fff;
   border-radius: 0;
   text-align: left;
@@ -632,7 +632,7 @@ th:last-child {
   margin-top: 1rem;
   padding: 0.35rem 0.5rem;
   overflow-wrap: anywhere;
-  border: 1px solid #e6e6e6;
+  border: 1px solid var(--border);
   background: #f5f5f5;
   color: #555;
   font-family: var(--font-mono);
@@ -641,7 +641,50 @@ th:last-child {
   white-space: normal;
 }
 
+.between-rendering-card {
+  display: flex;
+  width: 100%;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  background-color: var(--background);
+  transition: background-color 200ms ease;
+}
 
+.between-rendering-card > svg {
+  flex: 0 0 auto;
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .between-rendering-card:hover {
+    background-color: var(--surface);
+  }
+
+  .between-rendering-card:hover > svg {
+    transform: translate(2px, -2px);
+  }
+}
+
+.between-rendering-card__title {
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+}
+
+.between-rendering-card__description {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .between-rendering-card,
+  .between-rendering-card > svg {
+    transition: none;
+  }
+}
 
 .support-grid article {
   display: flex;
@@ -655,11 +698,11 @@ th:last-child {
 }
 
 .troubleshooting-list {
-  border-top: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
 }
 
 .troubleshooting-list details {
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--border);
 }
 
 .troubleshooting-list summary {
@@ -772,7 +815,7 @@ th:last-child {
     left: 0;
     display: block;
     width: 100%;
-    border-top: 1px solid #e6e6e6;
+    border-top: 1px solid var(--border);
     background: #fff;
   }
 
@@ -821,7 +864,7 @@ th:last-child {
     justify-content: space-between;
     gap: 2rem;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid #e6e6e6;
+    border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     background-color: white;

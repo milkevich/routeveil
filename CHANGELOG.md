@@ -2,6 +2,21 @@
 
 Notable changes to Routeveil are documented here.
 
+## 0.4.0 - 2026-08-02
+
+### Added
+
+- Added controlled between rendering for links, programmatic navigation, and same-page transition playback.
+- Added incoming-route control through `RouteveilBetween`, including nested content precedence, holds, and minimum timing.
+- Added page- and overlay-scoped between layers with crossfades, reduced-motion handling, readiness integration, and cleanup.
+- Added a between-render laboratory, API documentation, package checks, compatibility coverage, and lifecycle tests.
+
+### Fixed
+
+- Prevented duplicate transition requests from restarting an active or just-committed navigation.
+- Preserved layout and scroll behavior during same-page between playback.
+- Kept overlay between content non-scrollable and preserved authored blend modes through appearance and disappearance.
+
 ## 0.2.0 - 2026-07-25
 
 ### Added

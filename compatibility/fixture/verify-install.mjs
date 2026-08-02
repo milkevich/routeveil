@@ -21,6 +21,7 @@ assert.equal(readPackage('react-router-dom').version, expected.reactRouterDom)
 
 const publicApi = await import('routeveil/react-router')
 const expectedExports = [
+  'RouteveilBetween',
   'RouteveilLink',
   'RouteveilProvider',
   'RouteveilSharedElement',
@@ -31,6 +32,7 @@ const expectedExports = [
 ]
 
 assert.deepEqual(Object.keys(publicApi).toSorted(), expectedExports.toSorted())
+assert.equal(typeof publicApi.RouteveilBetween, 'function')
 
 const routeveilEntry = import.meta.resolve('routeveil/react-router')
 const routeveilRequire = createRequire(routeveilEntry)
