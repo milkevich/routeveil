@@ -217,7 +217,7 @@
     align-items: center;
     gap: 1rem;
     padding: 1rem;
-    border-bottom: 1px solid #e6e6e6;
+    border-bottom: 1px solid var(--border);
     font-size: 14px;
     font-weight: 500;
   }

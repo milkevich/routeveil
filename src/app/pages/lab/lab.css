@@ -6,7 +6,7 @@
   display: grid;
   align-content: center;
   padding-bottom: 3rem;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--border);
 }
 
 .lab-hero__heading-mask,
@@ -51,7 +51,7 @@
 
 .lab-group {
   padding: clamp(5rem, 8vw, 9rem) 0;
-  border-bottom: 1px solid #e6e6e6;
+  border-bottom: 1px solid var(--border);
 }
 
 .lab-group:last-child {
@@ -104,8 +104,8 @@
 
 .lab-card-grid {
   display: grid;
-  border-top: 1px solid #e6e6e6;
-  border-left: 1px solid #e6e6e6;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -146,8 +146,8 @@
   justify-content: flex-end;
   padding: clamp(1rem, 1.5vw, 1.75rem);
   border: 0;
-  border-right: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   color: #000000;
