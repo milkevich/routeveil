@@ -18,10 +18,10 @@ const customizationLinks = [
   },
   {
     index: '03',
-    title: 'Configuration',
+    title: 'Between Render',
     description:
-      'See the complete transition configuration reference and TypeScript behavior.',
-    to: '/docs#configuring-transitions',
+      'Preview custom between content across page and overlay transitions.',
+    to: '/lab/between',
   },
   {
     index: '04',

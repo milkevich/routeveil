@@ -1,0 +1,193 @@
+.between-demo__card {
+  appearance: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.between-demo__stage {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  pointer-events: none;
+}
+
+.between-demo__preparing,
+.between-demo__leopard-run,
+.between-demo__windows-loader,
+.between-demo__loading-icons,
+.between-demo__kiss,
+.between-demo__walking-dog,
+.between-demo__monster,
+.between-demo__horse-run {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.between-demo__preparing {
+  height: 100vh;
+  gap: 0.5rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.between-demo__spinner {
+  flex: 0 0 auto;
+  animation: between-demo-spinner 0.8s linear infinite;
+}
+
+.between-demo__leopard-run,
+.between-demo__windows-loader {
+  height: 95vh;
+}
+
+.between-demo__leopard-run-image {
+  height: 70vh;
+  max-width: 90vw;
+  object-fit: contain;
+}
+
+.between-demo__windows-loader-image {
+  width: 50px;
+}
+
+.between-demo__loading-icons,
+.between-demo__kiss,
+.between-demo__walking-dog {
+  height: calc(100vh - 50px);
+}
+
+.between-demo__loading-icons-image {
+  width: 200px;
+  max-width: 90vw;
+}
+
+.between-demo__kiss-image {
+  width: 300px;
+  max-width: 90vw;
+}
+
+.between-demo__graffiti {
+  display: grid;
+  width: 100vw;
+  min-height: calc(100vh - 50px);
+  place-items: center;
+}
+
+.between-demo__graffiti-image {
+  width: min(90vw, 800px);
+  height: auto;
+  filter: contrast(500%) hue-rotate(250deg) brightness(85%);
+}
+
+.between-demo__counter {
+  display: flex;
+  height: 100vh;
+}
+
+.between-demo__counter-value {
+  position: absolute;
+  right: 80px;
+  bottom: 35px;
+  color: #d9ff00;
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(10rem, 50vw, 25rem);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.09em;
+  line-height: 0.7;
+}
+
+.between-demo__walking-dog-image {
+  width: 100vw;
+  max-width: 300px;
+  filter: contrast(300%) brightness(95%) saturate(0%);
+  animation: between-demo-walking-dog 5s linear infinite alternate;
+}
+
+.between-demo__monster {
+  height: 100vh;
+}
+
+.between-demo__monster-image {
+  width: 400px;
+  max-width: 90vw;
+}
+
+.between-demo__wave {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.between-demo__wave-image {
+  height: 90vh;
+  filter: hue-rotate(320deg) saturate(0%) contrast(200%) brightness(90%);
+}
+
+.between-demo__horse-run {
+  height: 100vh;
+  gap: 0.8rem;
+  font-size: 50px;
+  letter-spacing: -0.125em;
+}
+
+.between-demo__horse-run-image {
+  width: 300px;
+  object-fit: contain;
+}
+
+.between-demo__routeveil-pixel {
+  display: grid;
+  width: 100%;
+  min-height: calc(100vh - 50px);
+  place-items: center;
+}
+
+.between-demo__routeveil-pixel-image {
+  width: 85vw;
+  max-width: 700px;
+}
+
+.between-demo__leopard-run-image,
+.between-demo__windows-loader-image,
+.between-demo__loading-icons-image,
+.between-demo__graffiti-image,
+.between-demo__kiss-image,
+.between-demo__walking-dog-image,
+.between-demo__monster-image,
+.between-demo__wave-image,
+.between-demo__horse-run-image,
+.between-demo__routeveil-pixel-image {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes between-demo-walking-dog {
+  from {
+    transform: translateX(-80vw);
+  }
+
+  to {
+    transform: translateX(120vw);
+  }
+}
+
+@keyframes between-demo-spinner {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .between-demo__spinner,
+  .between-demo__walking-dog-image {
+    animation: none;
+  }
+}
