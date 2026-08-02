@@ -1,6 +1,23 @@
-import { CodeBlock } from '../../../shared/UI'
+import { RouteveilLink } from '../../../../react-router'
+import { Arrow, CodeBlock } from '../../../shared/UI'
 import { DocSection } from '../DocSection'
 import { PropTable } from '../PropTable'
+
+const builtInProvider = `import { Outlet } from 'react-router-dom'
+import {
+  RouteveilProvider,
+  RouteveilView,
+} from 'routeveil/react-router'
+
+export function RootLayout() {
+  return (
+    <RouteveilProvider>
+      <RouteveilView>
+        <Outlet />
+      </RouteveilView>
+    </RouteveilProvider>
+  )
+}`
 
 const customProvider = `import { Outlet } from 'react-router-dom'
 import {
@@ -126,13 +143,35 @@ function PreviewButton() {
   const playTransition = useRouteveilTransition()
 
   async function handlePreview() {
-    await playTransition({
-      name: 'dissolve',
-      color: '#000000',
+    await playTransition('push', {
+      between: {
+        content: <LoadingVisual />,
+        minDuration: 1200,
+      },
     })
   }
 
   return <button onClick={handlePreview}>Preview</button>
+}`
+
+const overlayPlaybackExample = `import type { MouseEvent } from 'react'
+
+async function handleOverlayPreview(
+  event: MouseEvent<HTMLButtonElement>,
+) {
+  await playTransition(
+    {
+      name: 'halo',
+      color: '#111111',
+      origin: 'cursor',
+    },
+    {
+      clickPosition: {
+        x: event.clientX,
+        y: event.clientY,
+      },
+    },
+  )
 }`
 
 const pendingWorkExample = `import { useEffect } from 'react'
@@ -148,15 +187,99 @@ function ReportRoute({ chartsReady }: { chartsReady: Promise<void> }) {
   return <main>Report</main>
 }`
 
+const betweenFallbackExample = `<RouteveilLink
+  to="/dashboard"
+  transition="fade"
+  between={<BrandLogo />}
+>
+  Dashboard
+</RouteveilLink>
+
+navigate('/dashboard', {
+  transition: 'fade',
+  between: <BrandLogo />,
+})
+
+playTransition('push', {
+  between: <BrandLogo />,
+})`
+
+const configuredBetweenExample = `<RouteveilLink
+  to="/dashboard"
+  transition="fade"
+  between={{
+    content: <BrandLogo />,
+    minDuration: 500,
+  }}
+>
+  Dashboard
+</RouteveilLink>
+
+navigate('/dashboard', {
+  transition: 'fade',
+  between: {
+    content: <BrandLogo />,
+    minDuration: 500,
+  },
+})`
+
+const betweenLayoutExample = `<RouteveilBetween
+  content={
+    <div className="loading-screen">
+      <BrandLogo />
+    </div>
+  }
+/>`
+
+const betweenLayoutStyles = `.loading-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}`
+
+const pageBetweenMotionExample = `<RouteveilLink
+  to="/dashboard"
+  transition={{
+    exit: 'fade',
+    enter: {
+      name: 'slide',
+      direction: 'left',
+    },
+  }}
+  between={<BrandLogo />}
+>
+  Dashboard
+</RouteveilLink>`
+
+const incomingBetweenExample = `import { RouteveilBetween } from 'routeveil/react-router'
+
+function Dashboard({ isLoading }: { isLoading: boolean }) {
+  return (
+    <>
+      <RouteveilBetween
+        content={<LoadingStatus />}
+        while={isLoading}
+        minDuration={500}
+      />
+      <DashboardContent />
+    </>
+  )
+}`
+
 export function ApiDocs() {
   return (
     <>
       <DocSection
         id="provider"
         index="05"
-        intro="RouteveilProvider is the runtime boundary: it resolves effects, coordinates navigation, and guarantees cleanup."
+        intro="RouteveilProvider coordinates transitions for its subtree. Built-in effects work without configuration."
         title="Provider"
       >
+        <CodeBlock filename="RootLayout.tsx" language="tsx">{builtInProvider}</CodeBlock>
+        <p>
+          Render it inside React Router context. There is no default effect: each
+          request supplies <code>transition</code> or navigates normally.
+        </p>
         <PropTable
           caption="RouteveilProvider props"
           rows={[
@@ -165,22 +288,16 @@ export function ApiDocs() {
             { name: 'preload', type: 'RouteveilPreload', defaultValue: 'false', description: 'Default lazy-route preload strategy inherited by transitioned RouteveilLink instances.' },
           ]}
         />
+        <h3>Custom transitions</h3>
         <p>
-          Render the provider below <code>BrowserRouter</code> or inside a Data Router
-          layout because it reads React Router location state. Built-in transitions
-          require no setup. Pass <code>transitions</code> only to add a custom effect or
-          intentionally replace a built-in name for this provider subtree.
+          <code>transitions</code> adds raw page or overlay definitions. A definition
+          can add a name or replace a built-in within this subtree.
         </p>
         <CodeBlock filename="App.tsx" language="tsx">{customProvider}</CodeBlock>
         <div className="doc-note">
-          <strong>Resolution and concurrency</strong>
+          <strong>Safe fallback</strong>
           <p>
-            The provider does not choose a default effect: each request either supplies
-            {' '}<code>transition</code> or navigates normally. Unknown names and page
-            effects without a registered view fall back to safe, unanimated navigation.
-            While one request is active, another Routeveil request receives the same
-            promise and its destination is ignored. Reduced motion skips decorative
-            phases without changing the navigation contract.
+            Unknown names and page effects without a view navigate without animation.
           </p>
         </div>
       </DocSection>
@@ -195,6 +312,7 @@ export function ApiDocs() {
           caption="RouteveilLink additions"
           rows={[
             { name: 'transition', type: 'RouteveilTransition', defaultValue: 'undefined', description: 'A complete page or overlay effect, or independently selected page exit and enter phases.' },
+            { name: 'between', type: 'RouteveilBetweenInput', defaultValue: 'undefined', description: 'Immediate content for the optional between phase, with an optional minimum duration.' },
             { name: 'preload', type: 'RouteveilPreload', defaultValue: 'provider value', description: 'Overrides the provider lazy-route preload strategy for this link.' },
             { name: 'smoothScrollToTop', type: 'boolean', defaultValue: 'false', description: 'Smoothly resets scroll after navigation instead of using the default instant reset.' },
             { name: 'scrollToSharedElement', type: 'string', defaultValue: 'undefined', description: 'Vertically centers the exactly named incoming shared element before shared targets are measured.' },
@@ -204,99 +322,33 @@ export function ApiDocs() {
         />
         <CodeBlock filename="DocsLink.tsx" language="tsx">{pageLinkExample}</CodeBlock>
         <p>
-          Routeveil first calls your <code>onClick</code> and stops if it prevents the
-          event. It starts a transition only for an unmodified primary activation of an
-          internal destination whose pathname, search, or hash differs from the current
-          location. A selected Routeveil effect takes ownership of the lifecycle, so
-          React Router&apos;s native <code>viewTransition</code> option is disabled for that
-          request.
+          Routeveil calls <code>onClick</code> first and respects
+          {' '}<code>preventDefault()</code>. Eligible internal primary activations
+          transition when pathname, search, or hash changes. Routeveil disables React
+          Router&apos;s native <code>viewTransition</code> for that request.
+        </p>
+        <h3>Scroll behavior</h3>
+        <p>
+          Precedence is: URL hash → valid <code>scrollToSharedElement</code> →
+          {' '}<code>preventScrollReset</code> → top reset. The reset is instant unless
+          {' '}<code>smoothScrollToTop</code> is true. Invalid shared targets warn and
+          fall through. Playback never scrolls; interruption adds no Routeveil reset.
         </p>
         <div className="doc-note">
           <strong>Native link behavior</strong>
           <p>
-            Routeveil does not intercept modified or non-primary clicks, external URLs,
-            downloads, <code>reloadDocument</code>, non-self targets, prevented events,
-            or same-location links. Keyboard activation can transition, but it has no
-            pointer coordinates; overlays that depend on them therefore use their
-            center fallback.
-          </p>
-        </div>
-      </DocSection>
-
-      <DocSection
-        id="route-preloading"
-        index="07"
-        intro="Preloading starts matching Data Router lazy modules before navigation so visual transitions do not wait on avoidable network work."
-        title="Route Preloading"
-      >
-        <p>
-          Set <code>preload</code> on <code>RouteveilProvider</code> once to establish a
-          default for transitioned links. Override it per link when a destination has
-          different priority. The default is <code>false</code>.
-        </p>
-        <CodeBlock filename="App.tsx" language="tsx">{preloadProviderExample}</CodeBlock>
-        <p>
-          This self-closing <code>RouteveilView</code> belongs in a Data Router layout,
-          where omitted children render the current <code>Outlet</code>. Automatic lazy
-          route discovery requires a Data Router such as{' '}
-          <code>createBrowserRouter</code>. Under declarative{' '}
-          <code>BrowserRouter</code>, preload strategies safely do nothing because React
-          Router does not expose the route tree.
-        </p>
-        <div className="option-groups">
-          <article>
-            <h3>Intent</h3>
-            <p>
-              <code>intent</code> starts on focus, pointer intent, pointer press, or
-              touch start. Use it for most links: likely destinations begin loading
-              without preparing every link on the page.
-            </p>
-          </article>
-          <article>
-            <h3>Viewport</h3>
-            <p>
-              <code>viewport</code> starts when the link becomes visible. It suits
-              primary navigation and touch interfaces where there may be no hover
-              signal before activation.
-            </p>
-          </article>
-          <article>
-            <h3>Render</h3>
-            <p>
-              <code>render</code> starts when the link mounts, even outside the viewport.
-              Reserve it for destinations important enough to prepare immediately.
-            </p>
-          </article>
-          <article>
-            <h3>Disabled</h3>
-            <p>
-              <code>false</code> disables preloading. A link-level value always wins over
-              the provider default, including an explicit opt-out.
-            </p>
-          </article>
-        </div>
-        <CodeBlock filename="Navigation.tsx" language="tsx">{preloadLinkExample}</CodeBlock>
-        <p>
-          Only eligible internal <code>RouteveilLink</code> instances with a transition
-          preload. When activated, a link reuses work it already started. Routeveil can
-          overlap that work with a real exit animation; when there is no exit to cover
-          the wait, the current page remains visible until preload settles.
-        </p>
-        <div className="doc-note">
-          <strong>Module preparation, not destination rendering</strong>
-          <p>
-            Preloading downloads and evaluates lazy route modules, then caches their
-            promises. It does not render the destination, run component effects, or
-            execute loaders. If preparation rejects or times out, Routeveil continues
-            navigation safely instead of trapping the current page.
+            Modified or non-primary clicks, external URLs, downloads,
+            {' '}<code>reloadDocument</code>, non-self targets, prevented events, and
+            same-location links stay native. Keyboard activation has no pointer
+            coordinates, so pointer-aware overlays use the center fallback.
           </p>
         </div>
       </DocSection>
 
       <DocSection
         id="routeveil-view"
-        index="08"
-        intro="RouteveilView marks the one routed region that page transitions animate; everything outside it can remain persistent."
+        index="07"
+        intro="RouteveilView marks the one routed region animated by page transitions."
         title="RouteveilView"
       >
         <PropTable
@@ -312,122 +364,241 @@ export function ApiDocs() {
         <h3>Outlet layout</h3>
         <CodeBlock filename="RootLayout.tsx" language="tsx">{outletViewExample}</CodeBlock>
         <p>
-          The wrapper stays registered while React Router replaces its children, giving
-          Routeveil one stable animation boundary. It exposes{' '}
-          <code>data-routeveil-phase</code>, reports busy state during a lifecycle, and
-          becomes inert during page transitions. Cleanup restores every prior value.
+          The wrapper stays registered while routes change. It exposes data attributes
+          and becomes inert during page lifecycles; cleanup restores it.
         </p>
         <div className="doc-note">
           <strong>One active view</strong>
           <p>
-            Use one active <code>RouteveilView</code> per provider. Put only content that
-            should exit and enter inside it; keep persistent headers, footers, and
-            controls outside.
+            Use one active view per provider. Put animated route content inside and
+            persistent interface outside.
           </p>
         </div>
       </DocSection>
 
       <DocSection
         id="programmatic-navigation"
-        index="09"
+        index="08"
         intro="useRouteveilNavigate brings the same transition contract to buttons, workflows, and application code."
         title="Programmatic Navigation"
       >
         <CodeBlock filename="ContinueButton.tsx" language="tsx">{navigateExample}</CodeBlock>
         <p>
-          Options include React Router&apos;s <code>replace</code>, <code>state</code>,
-          {' '}<code>relative</code>, and <code>preventScrollReset</code>, plus
-          Routeveil&apos;s <code>transition</code>, <code>smoothScrollToTop</code>,
-          {' '}<code>scrollToSharedElement</code>, and <code>sharedElements</code>. The
-          returned promise resolves only after the visual lifecycle and cleanup finish.
+          Options combine React Router&apos;s <code>replace</code>, <code>state</code>,
+          {' '}<code>relative</code>, and <code>preventScrollReset</code> with
+          {' '}<code>transition</code>, <code>between</code>,
+          {' '}<code>smoothScrollToTop</code>, <code>scrollToSharedElement</code>, and
+          {' '}<code>sharedElements</code>. The promise resolves after cleanup.
         </p>
         <p>
-          Without a transition, the hook delegates directly to React Router. An
-          unchanged pathname, search, and hash also skip animation. Programmatic calls
-          have no pointer coordinates, so overlays that depend on them use their
-          center fallback.
+          Without a transition or location change, the hook delegates to React Router.
+          Pointer-aware overlays use the center fallback. Scroll follows
+          {' '}<code>RouteveilLink</code>.
         </p>
       </DocSection>
 
       <DocSection
-        id="transition-playback"
-        index="10"
-        intro="useRouteveilTransition previews a page or overlay effect on the current route without navigating."
-        title="Transition Playback"
+        id="route-preloading"
+        index="09"
+        intro="Preloading prepares matching Data Router lazy modules before transitioned navigation."
+        title="Route Preloading"
       >
-        <CodeBlock filename="PreviewButton.tsx" language="tsx">{playExample}</CodeBlock>
         <p>
-          Playback does not change the URL, history, location state, mounted route, or
-          scroll position. The returned promise resolves after the effect and cleanup
-          finish. Pass <code>clickPosition</code> when the control should provide the
-          origin for a pointer-aware overlay.
+          Set a provider default and override it per link. The four values are:
         </p>
+        <div className="option-groups">
+          <article>
+            <h3>Intent</h3>
+            <p><code>intent</code> starts on focus, pointer intent, press, or touch.</p>
+          </article>
+          <article>
+            <h3>Viewport</h3>
+            <p><code>viewport</code> starts when the link becomes visible.</p>
+          </article>
+          <article>
+            <h3>Render</h3>
+            <p><code>render</code> starts as soon as the link mounts.</p>
+          </article>
+          <article>
+            <h3>Disabled</h3>
+            <p><code>false</code> disables preloading and is the default.</p>
+          </article>
+        </div>
+        <CodeBlock filename="App.tsx" language="tsx">{preloadProviderExample}</CodeBlock>
+        <CodeBlock filename="Navigation.tsx" language="tsx">{preloadLinkExample}</CodeBlock>
+        <p>
+          Discovery requires a Data Router. Under declarative
+          {' '}<code>BrowserRouter</code>, strategies safely do nothing.
+        </p>
+        <div className="doc-note">
+          <strong>Modules only</strong>
+          <p>
+            Preloading caches lazy route modules. It does not render, run component
+            effects, or execute loaders. Failure never blocks navigation.
+          </p>
+        </div>
       </DocSection>
 
       <DocSection
         id="route-readiness"
-        index="11"
+        index="10"
         intro="useRouteveilPendingWork lets an incoming route delay enter or reveal until its own visual work is ready."
         title="Route Readiness"
       >
         <CodeBlock filename="ReportRoute.tsx" language="tsx">{pendingWorkExample}</CodeBlock>
         <p>
-          Register a promise while the incoming route is mounting. Routeveil waits for
-          it before enter or reveal. The returned cleanup function releases the work on
-          unmount, rejections count as settled, and a safety timeout keeps navigation
-          from waiting indefinitely.
+          Register while the incoming route mounts. Enter or reveal waits. Cleanup
+          releases the work, rejection counts as settled, and a timeout prevents an
+          indefinite wait.
         </p>
       </DocSection>
 
       <DocSection
-        id="interrupted-navigation"
-        index="12"
-        intro="Routeveil has one predictable concurrency rule and a separate safety path for location changes it did not start."
-        title="Interrupted Navigation"
+        id="between-rendering"
+        index="11"
+        intro="Controlled React content can appear after exit or cover and before enter or reveal."
+        title="Between Rendering"
       >
+        <RouteveilLink to="/lab/between" transition="wipe">
+          <div className="between-rendering-card">
+            <div>
+              <h2 className="between-rendering-card__title">
+                Between rendering examples
+              </h2>
+              <p className="between-rendering-card__description">
+                Check out the examples to see between rendering in action
+              </p>
+            </div>
+            <Arrow diagonal />
+          </div>
+        </RouteveilLink>
+        <h3>Navigation fallback</h3>
+        <CodeBlock filename="Navigation.tsx" language="tsx">
+          {betweenFallbackExample}
+        </CodeBlock>
         <p>
-          Routeveil runs one transition at a time. A second{' '}
-          <code>RouteveilLink</code>, <code>useRouteveilNavigate</code>, or{' '}
-          <code>useRouteveilTransition</code> request made during an active transition
-          is ignored and receives the active transition promise. It is not queued and
-          does not replace the current request.
+          <code>RouteveilLink</code>, <code>useRouteveilNavigate</code>, and
+          {' '}<code>useRouteveilTransition</code> accept a React node or a configured
+          value with a minimum display time.
+        </p>
+        <p>
+          Navigation-level page content follows
+          {' '}<code>exit → between → navigate and prepare → enter</code>. Overlay
+          content follows
+          {' '}<code>cover → between → navigate and prepare → reveal</code>.
+        </p>
+        <CodeBlock filename="Navigation.tsx" language="tsx">
+          {configuredBetweenExample}
+        </CodeBlock>
+
+        <h3>Incoming route control</h3>
+        <CodeBlock filename="Dashboard.tsx" language="tsx">
+          {incomingBetweenExample}
+        </CodeBlock>
+        <PropTable
+          caption="RouteveilBetween props"
+          rows={[
+            { name: 'content', type: 'ReactNode', defaultValue: 'required', description: 'Content displayed during the between phase.' },
+            { name: 'while', type: 'boolean', defaultValue: 'false', description: 'Keeps the between phase active while true. Unmounting releases the hold.' },
+            { name: 'minDuration', type: 'number', defaultValue: '0', description: 'Minimum milliseconds from appearance start before disappearance may begin.' },
+          ]}
+        />
+        <p>
+          Incoming content replaces the fallback with a crossfade. Setting
+          {' '}<code>while</code> to <code>true</code> holds enter or reveal; setting it
+          to <code>false</code> or unmounting releases the hold.
+          {' '}<code>minDuration</code> is a minimum, not a deadline. Readiness, pending
+          work, and other registrations may extend it. Invalid, negative, or non-finite
+          values are zero.
+        </p>
+        <p>
+          Without navigation-level between content, navigation happens first. An
+          incoming <code>RouteveilBetween</code> registration then shows between content
+          before enter or reveal.
         </p>
         <div className="doc-split">
           <article>
-            <h3>Interaction blocking</h3>
+            <h3>Nested registrations</h3>
             <p>
-              A page transition makes <code>RouteveilView</code> inert. An overlay
-              blocks pointer input across the viewport. Persistent controls outside the
-              view may still be interactive, and browser history or application code
-              can still change location.
+              The newest incoming registration is visible; all active registrations
+              contribute holds and minimums. Unmounting falls back through older
+              registrations, then navigation content. Replacement crossfades without
+              restarting the lifecycle or clock. Outgoing registrations are ignored.
             </p>
           </article>
           <article>
-            <h3>Browser history</h3>
+            <h3>Shared elements</h3>
             <p>
-              Back, Forward, ordinary React Router navigation, plain links, and direct
-              history changes can interrupt an effect. The latest location wins.
-              Routeveil cancels the remaining animation, abandons a destination it has
-              not committed, and never repeats navigation that already committed.
+              Shared movement and between rendering are mutually exclusive.
+              Navigation-level between content disables shared movement. If shared
+              movement has already started, Routeveil skips a later incoming between
+              layer.
             </p>
           </article>
         </div>
-        <h3>Accessibility and Focus</h3>
+        <h3>Content sizing and placement</h3>
         <p>
-          If the application moved focus to a meaningful connected element, Routeveil
-          leaves it there. Otherwise it focuses the incoming <code>RouteveilView</code>{' '}
-          with <code>preventScroll</code>. It never focuses a disconnected outgoing
-          trigger. Playback and failed unchanged navigation restore prior focus only
-          when it is still connected and the application has not moved focus elsewhere.
+          Routeveil does not center or make between content fullscreen. The content
+          controls its height and alignment; page between content does not inherit the
+          incoming page&apos;s height. Overlay between content may cover the viewport through
+          your styles. Use <code>min-height: 100vh</code> intentionally.
+        </p>
+        <CodeBlock filename="Dashboard.tsx" language="tsx">
+          {betweenLayoutExample}
+        </CodeBlock>
+        <CodeBlock filename="loading.css" language="css">
+          {betweenLayoutStyles}
+        </CodeBlock>
+        <h3>Page transition motion</h3>
+        <CodeBlock filename="DashboardLink.tsx" language="tsx">
+          {pageBetweenMotionExample}
+        </CodeBlock>
+        <p>
+          The between content appears using the outgoing transition and disappears
+          using the incoming transition. Routeveil uses each transition&apos;s complementary
+          phase. In this example: outgoing fade exit → between fade appearance →
+          between slide disappearance → incoming slide enter. Split phases resolve
+          independently.
+        </p>
+        <p>
+          Omitting <code>exit</code> or <code>enter</code> removes that page animation.
+          Its corresponding between motion uses the layer&apos;s opacity fallback.
+        </p>
+        <h3>Overlay transition motion</h3>
+        <p>
+          Overlays keep their cover and reveal. The between content appears after cover
+          and leaves before reveal using the overlay between layer&apos;s motion. The layer
+          locks viewport scrolling; replacement crossfades without restarting.
         </p>
         <div className="doc-note">
-          <strong>Cleanup guarantees</strong>
+          <strong>A transition is still required</strong>
           <p>
-            After success, interruption, failure, or provider unmount, Routeveil
-            restores temporary animation state, interaction, visibility, focus, and
-            overlays. Every returned transition promise settles safely.
+            Without <code>transition</code>, <code>between</code> creates no phase.
+            Playback supports between content while keeping the route mounted.
           </p>
         </div>
+      </DocSection>
+
+      <DocSection
+        id="transition-playback"
+        index="12"
+        intro="useRouteveilTransition plays a page or overlay effect on the current route without navigating."
+        title="Transition Playback"
+      >
+        <CodeBlock filename="PreviewButton.tsx" language="tsx">{playExample}</CodeBlock>
+        <p>
+          Playback does not navigate, change URL/history/location state, remount, or
+          scroll. It supports <code>between</code> and <code>minDuration</code>. Its
+          promise resolves after animation and cleanup.
+        </p>
+        <h3>Pointer-aware overlay</h3>
+        <CodeBlock filename="OverlayPreview.tsx" language="tsx">
+          {overlayPlaybackExample}
+        </CodeBlock>
+        <p>
+          <code>clickPosition</code> supplies pointer coordinates; otherwise
+          pointer-aware overlays use center fallback.
+        </p>
       </DocSection>
     </>
   )

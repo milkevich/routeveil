@@ -24,29 +24,38 @@ const overlayExample = `import { RouteveilLink } from 'routeveil/react-router'
   Open Lab
 </RouteveilLink>`
 
-const transitionInputsExample = `navigate('/about', {
-  transition: 'fade',
-})
+const transitionInputsExample = `<RouteveilLink to="/about" transition="fade">
+  About
+</RouteveilLink>
 
-navigate('/about', {
-  transition: {
+<RouteveilLink
+  to="/about"
+  transition={{
     name: 'slide',
     direction: 'left',
-  },
-})
+  }}
+>
+  About
+</RouteveilLink>
 
-navigate('/about', {
-  transition: {
+<RouteveilLink
+  to="/about"
+  transition={{
     exit: 'fade',
     enter: 'slide',
-  },
-})
+  }}
+>
+  About
+</RouteveilLink>
 
-navigate('/about', {
-  transition: {
+<RouteveilLink
+  to="/about"
+  transition={{
     enter: 'slide',
-  },
-})`
+  }}
+>
+  About
+</RouteveilLink>`
 
 const configuredPhasesExample = `navigate('/about', {
   transition: {
@@ -98,22 +107,6 @@ const multipleSharedElementsExample = `<RouteveilLink
   </RouteveilSharedElement>
 </RouteveilLink>`
 
-const typedOptionsExample = `import {
-  RouteveilLink,
-  type TransitionOptionsFor,
-} from 'routeveil/react-router'
-
-const slideOptions = {
-  direction: 'left',
-} satisfies TransitionOptionsFor<'slide'>
-
-<RouteveilLink
-  to="/docs"
-  transition={{ name: 'slide', ...slideOptions }}
->
-  Documentation
-</RouteveilLink>`
-
 export function TransitionDocs() {
   const playTransition = useRouteveilTransition()
   const [previewBusy, setPreviewBusy] = useState(false)
@@ -158,28 +151,31 @@ export function TransitionDocs() {
       <DocSection
         id="page-transitions"
         index="13"
-        intro="Page transitions animate the route region you registered, with independent control over how the old page leaves and the new page arrives."
+        intro="Page transitions animate RouteveilView and let the outgoing and incoming phases be selected independently."
         title="Page Transitions"
       >
         <p>
-          The default lifecycle is <code>exit → navigate → enter</code>. Routeveil
-          animates the current <code>RouteveilView</code>, commits the destination,
-          waits until the incoming route is rendered and ready, then animates the same
-          view back in. The view remains inert until cleanup restores interaction.
+          The lifecycle is <code>exit → navigate and prepare → enter</code>. With
+          navigation-level between content it is
+          {' '}<code>exit → between → navigate and prepare → enter</code>. The
+          between-rendering section covers holds, sizing, and motion.
         </p>
         <h3>Transition inputs</h3>
         <CodeBlock filename="Navigation.tsx" language="tsx">{transitionInputsExample}</CodeBlock>
         <p>
-          A string uses the preset defaults. A <code>name</code> object configures one
-          complete transition with its options beside the name. Use <code>exit</code>{' '}
-          and <code>enter</code> to select the two page phases independently.
+          A string uses preset defaults. An object accepts <code>name</code> and that
+          effect&apos;s options. <code>exit</code> and <code>enter</code> select typed phases
+          independently.
         </p>
         <h3>Configure each phase</h3>
         <CodeBlock filename="ConfiguredPhases.tsx" language="tsx">{configuredPhasesExample}</CodeBlock>
         <p>
-          Each split phase resolves with its own configuration. Omitting one phase skips
-          only that page animation. A missing phase does not fall back to the other
-          phase and does not create a zero-duration substitute.
+          Each phase resolves its own configuration. An omitted phase is not copied or
+          replaced.
+        </p>
+        <p>
+          Exit-only reveals without enter. Enter-only hides without exit, then enters.
+          With no valid phase, navigation has no animation or between layer.
         </p>
         <div className="built-in-group">
           <div className="built-in-list">
@@ -223,10 +219,9 @@ export function TransitionDocs() {
         <div className="doc-note">
           <strong>Preset timing</strong>
           <p>
-            Built-in page effects own their keyframes, duration, and easing.
-            {' '}<code>slide</code> and <code>spin</code> accept up, down, left, or
-            right; <code>rotate</code> accepts left or right. Other page presets need
-            only their name.
+            Built-ins own timing. <code>slide</code> and <code>spin</code> accept up,
+            down, left, or right; <code>rotate</code> accepts left or right. Others have
+            no public options.
           </p>
         </div>
       </DocSection>
@@ -269,70 +264,59 @@ export function TransitionDocs() {
         <h3>Basic workflow</h3>
         <CodeBlock filename="ProjectRoutes.tsx" language="tsx">{sharedElementExample}</CodeBlock>
         <p>
-          Wrap the matching source and destination elements with the same unique name, then start a page transition.
+          Give source and destination the same unique name, then start a page transition.
         </p>
         <p>
-          Matching uses the <code>name</code>, not the element tag or route position.
-          Names must be unique within each active route. Custom children must forward
-          their ref to one HTML or SVG element.
+          Matching uses <code>name</code>, not tag or position. Names must be unique per
+          route. Custom children must forward a ref to one HTML or SVG element.
         </p>
         <div className="doc-note">
           <strong>Coordinated lifecycle</strong>
           <p>
-            When an exit phase exists, shared movement starts with a short lead and
-            overlaps the page exit. Page enter starts after both have finished. Without
-            an exit phase, shared movement finishes before page enter. Shared elements
-            enhance a page transition; they are not a transition name.
+            Movement may overlap exit when the destination is ready; otherwise it runs
+            afterward. Without exit it runs before enter. Shared movement and between
+            rendering are mutually exclusive. Navigation-level between content disables
+            shared movement. If shared movement has already started, Routeveil skips a
+            later incoming between layer. Shared elements are not a transition name.
           </p>
         </div>
         <div className="doc-split">
           <article>
             <h3>Source discovery</h3>
             <p>
-              With the default <code>sharedElements=&quot;auto&quot;</code>, a clicked
-              {' '}<code>RouteveilLink</code> selects shared elements on, inside, or
-              around that link. Use <code>sharedElements</code> to select exact names,
-              choose <code>all</code>, or disable sharing with <code>false</code>.
+              <code>auto</code> selects elements on, inside, or around a clicked link.
+              Use exact names, <code>all</code>, or <code>false</code> to override it.
             </p>
           </article>
           <article>
             <h3>Matching</h3>
             <p>
-              Missing destination names are skipped. Duplicate names are also skipped
-              because they are ambiguous. Other valid shared elements continue without
-              blocking the page transition.
+              Missing and duplicate names are skipped. Other valid matches continue.
             </p>
           </article>
         </div>
         <h3>Multiple elements</h3>
         <CodeBlock filename="ProjectLink.tsx" language="tsx">{multipleSharedElementsExample}</CodeBlock>
         <p>
-          One navigation can connect multiple unique names. Valid matches move together,
-          and Routeveil waits for them before starting the page enter phase.
+          Multiple unique matches move together; page enter waits for them.
         </p>
         <h3>Scroll anchor</h3>
         <p>
-          Set <code>scrollToSharedElement</code> to an incoming shared-element name to
-          center it vertically before the transition continues. A URL hash takes
-          precedence. A valid shared-element target takes precedence over{' '}
-          <code>preventScrollReset</code> and <code>smoothScrollToTop</code>. If the
-          target is missing or duplicated, Routeveil warns and uses the normal scroll
-          policy.
+          <code>scrollToSharedElement</code> centers one incoming name before measurement.
+          Invalid names warn and use the <code>RouteveilLink</code> scroll rules.
         </p>
         <h3>Supported behavior</h3>
         <p>
-          Shared elements work with every page transition, including split and
-          one-sided page phases. Overlay transitions and same-page playback ignore
-          shared registrations. Reduced motion skips shared movement while navigation
-          and valid <code>scrollToSharedElement</code> positioning still complete.
+          Sharing supports complete, split, and one-sided page transitions. Overlays
+          and playback ignore it. Reduced motion skips movement but still navigates and
+          positions a valid <code>scrollToSharedElement</code>.
         </p>
         <div className="doc-note">
           <strong>Current limitations</strong>
           <p>
-            Each wrapper needs one child that resolves to one HTML or SVG element;
-            custom children must forward a ref. Back and Forward do not start shared
-            movement. Video playback continuity is not preserved, and canvas, iframe,
-            WebGL, audio, and pseudo-element fidelity is limited.
+            Wrappers need one HTML or SVG child. Back and Forward do not start movement.
+            Video continuity is not preserved; canvas, iframe, WebGL, audio, and
+            pseudo-element fidelity is limited.
           </p>
         </div>
       </DocSection>
@@ -345,11 +329,10 @@ export function TransitionDocs() {
       >
         <CodeBlock filename="LabLink.tsx" language="tsx">{overlayExample}</CodeBlock>
         <p>
-          <code>halo</code> is a built-in overlay transition. Overlay transitions use
-          the <code>cover → navigate → reveal</code> lifecycle: they hide the current
-          screen, commit navigation, wait for the destination, then reveal it. Because
-          they cover the viewport, persistent interface outside{' '}
-          <code>RouteveilView</code> is hidden too.
+          The lifecycle is <code>cover → navigate and prepare → reveal</code>. With
+          navigation-level between content it is
+          {' '}<code>cover → between → navigate and prepare → reveal</code>; cover
+          finishes before between content appears, and reveal waits for it to leave.
         </p>
         <div className="built-in-group">
           <div className="built-in-list">
@@ -390,95 +373,80 @@ export function TransitionDocs() {
             ))}
           </div>
         </div>
+        <p>
+          Use a string for defaults or a <code>name</code> object with listed options.
+        </p>
         <div className="doc-note">
-          <strong>Coverage and origin</strong>
+          <strong>Color and coverage</strong>
           <p>
-            Most solid overlays accept <code>color</code>; <code>mosaic</code> accepts a
-            palette through <code>colors</code>. Pointer-aware radial effects expand far
-            enough to cover the farthest corner. The built-in <code>halo</code>{' '}
-            transition accepts <code>origin: &apos;cursor&apos;</code> or{' '}
-            <code>origin: &apos;center&apos;</code>. Links provide pointer coordinates;
-            keyboard and programmatic navigation use the center fallback.
+            Most overlays accept <code>color</code>; <code>mosaic</code> accepts
+            {' '}<code>colors</code>. Opaque colors keep the destination hidden.
           </p>
         </div>
-      </DocSection>
-
-      <DocSection
-        id="configuring-transitions"
-        index="16"
-        intro="Configure a transition by placing only the options supported by that name directly beside name."
-        title="Configuring Transitions"
-      >
         <div className="option-groups">
           <article>
-            <h3>Direction</h3>
+            <h3>Origin</h3>
             <p>
-              Direction values depend on the effect. <code>slide</code> and
-              {' '}<code>spin</code> use up, down, left, or right. <code>rotate</code> uses
-              left or right. Overlay direction types are effect-specific: for example,
-              clock uses clockwise or counterclockwise, while venetian uses horizontal
-              or vertical. TypeScript prevents mixing these vocabularies.
+              <code>iris</code>, <code>halo</code>, <code>tunnel</code>, and
+              {' '}<code>clock</code>: <code>cursor</code> or <code>center</code>.
+              {' '}<code>pixel</code> also accepts named corners and <code>random</code>;
+              {' '}<code>mosaic</code> accepts <code>cursor</code>, <code>center</code>,
+              or <code>random</code>. Cards list exact values.
             </p>
           </article>
           <article>
             <h3>Timing</h3>
             <p>
-              Overlay effects accept <code>duration</code> where listed. Tunnel can set
-              {' '}<code>coverDuration</code> and <code>revealDuration</code> separately.
-              Segmented effects expose <code>stagger</code>, and effects that support
-              timing curves expose <code>easing</code>. Built-in page timing is fixed.
+              Timing exists only where listed. <code>tunnel</code> separates
+              {' '}<code>coverDuration</code> and <code>revealDuration</code>; segmented
+              effects may expose <code>stagger</code>. Only listed effects accept
+              {' '}<code>easing</code>.
             </p>
           </article>
           <article>
-            <h3>Color</h3>
+            <h3>Pointer coordinates</h3>
             <p>
-              Most overlays use one opaque CSS <code>color</code>. Mosaic uses
-              {' '}<code>colors</code> because each tile can select from a palette. Keep
-              cover colors opaque so navigation cannot become visible mid-cover.
-            </p>
-          </article>
-          <article>
-            <h3>Origin</h3>
-            <p>
-              Origin controls where a spatial effect begins. <code>iris</code>,{' '}
-              <code>halo</code>, <code>tunnel</code>, and <code>clock</code> accept{' '}
-              <code>cursor</code> or <code>center</code>. <code>pixel</code> accepts{' '}
-              <code>cursor</code>, <code>center</code>, <code>top-left</code>,{' '}
-              <code>top-right</code>, <code>bottom-left</code>,{' '}
-              <code>bottom-right</code>, or <code>random</code>. <code>mosaic</code>{' '}
-              accepts <code>cursor</code>, <code>center</code>, or <code>random</code>.
-              {' '}<code>RouteveilLink</code> supplies pointer coordinates. Requests
-              without them fall back to the viewport center.
-            </p>
-          </article>
-          <article>
-            <h3>Scroll behavior</h3>
-            <p>
-              A successful transition resets to the top instantly unless another rule
-              wins. Use <code>smoothScrollToTop</code> for a smooth reset or
-              {' '}<code>preventScrollReset</code> to preserve position. URL hashes take
-              highest precedence, followed by a valid{' '}
-              <code>scrollToSharedElement</code> anchor. Playback and cancelled runs do
-              not change scroll.
-            </p>
-          </article>
-          <article>
-            <h3>TypeScript inference</h3>
-            <p>
-              Keep <code>name</code> literal so Routeveil can select the corresponding
-              option type. The same inference applies to links, programmatic navigation,
-              playback, complete transitions, and each side of a split transition.
+              <code>RouteveilLink</code> supplies pointer coordinates. Keyboard and
+              programmatic navigation use the center fallback. Playback may explicitly
+              pass <code>clickPosition</code>.
             </p>
           </article>
         </div>
-        <CodeBlock filename="Navigation.tsx" language="tsx">{typedOptionsExample}</CodeBlock>
+      </DocSection>
+
+      <DocSection
+        id="interrupted-navigation"
+        index="16"
+        intro="Routeveil runs one request at a time and cleans up safely when unrelated navigation interrupts it."
+        title="Interrupted Navigation"
+      >
+        <p>
+          Later links, navigation calls, and playback receive the active promise. They
+          are not queued and do not replace its destination.
+        </p>
+        <div className="doc-split">
+          <article>
+            <h3>External navigation</h3>
+            <p>
+              Back, Forward, plain links, and unrelated location changes may interrupt.
+              The latest location wins; committed navigation is never repeated.
+            </p>
+          </article>
+          <article>
+            <h3>Focus</h3>
+            <p>
+              Application focus is preserved when meaningful and connected. Otherwise
+              the incoming view receives focus with <code>preventScroll</code>.
+              Disconnected triggers are never focused; playback restores prior focus
+              only when the application has not moved it.
+            </p>
+          </article>
+        </div>
         <div className="doc-note">
-          <strong>Match options to the transition</strong>
+          <strong>Cleanup guarantee</strong>
           <p>
-            The transition name is the discriminator. Clockwise belongs to
-            {' '}<code>clock</code>, not <code>slide</code>; <code>colors</code> belongs
-            to <code>mosaic</code>, while tunnel uses <code>color</code>. Literal names
-            turn those mistakes into immediate TypeScript errors.
+            Success, interruption, failure, or unmount restores temporary visuals,
+            interaction, focus, and overlays. Every promise settles safely.
           </p>
         </div>
       </DocSection>

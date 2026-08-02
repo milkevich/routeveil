@@ -17,24 +17,21 @@ export function GuideDocs() {
       title="Reduced Motion"
     >
       <p>
-        Before every request, Routeveil reads{' '}
-        <code>prefers-reduced-motion: reduce</code>. When it matches, Routeveil skips
-        page, overlay, and shared-element animation, commits navigation safely, waits
-        for the destination, applies the normal scroll and focus rules, and cleans up.
-        No provider flag or alternate navigation path is required.
+        Routeveil reads <code>prefers-reduced-motion: reduce</code> per request. It skips
+        page, overlay, shared-element, and between motion while navigation, readiness,
+        between content and its <code>while</code> and <code>minDuration</code>
+        requirements, focus, scroll, and cleanup keep their normal contract. No
+        provider flag is needed.
       </p>
       <CodeBlock filename="motion.css" language="css">{reducedMotion}</CodeBlock>
       <p>
-        This CSS is for motion your application owns. Routeveil already applies the
-        preference to built-in and custom transition lifecycles; your component
-        animations should honor the same media query independently.
+        Routeveil handles its own motion. Use this CSS for application-owned animation.
       </p>
       <div className="doc-note">
         <strong>Navigation is never blocked</strong>
         <p>
-          Links and navigation hooks still commit and resolve their promises. Playback
-          calls resolve without changing location. Application code can therefore use
-          one path for every motion preference.
+          Navigation and readiness still finish. Playback resolves without changing
+          location, so application code needs no alternate path.
         </p>
       </div>
     </DocSection>
