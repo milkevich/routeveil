@@ -1,11 +1,16 @@
 import { useCallback, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent } from 'react'
+import type {
+  CSSProperties,
+  MouseEvent,
+  PointerEvent,
+} from 'react'
 import './LineSidebar.css'
 
 type Falloff = 'linear' | 'smooth' | 'sharp'
 
 export interface LineSidebarProps {
   items: string[]
+  hrefs?: readonly string[]
   accentColor?: string
   textColor?: string
   markerColor?: string
@@ -35,6 +40,7 @@ const falloffCurves: Record<Falloff, (progress: number) => number> = {
 
 export default function LineSidebar({
   items,
+  hrefs,
   accentColor = '#000000',
   textColor = '#6f6f6f',
   markerColor = '#a8a8a8',
@@ -111,31 +117,82 @@ export default function LineSidebar({
         onPointerLeave={clearEffects}
         onPointerMove={handlePointerMove}
       >
-        {items.map((label, index) => (
-          <li
-            ref={(element) => {
-              itemRefs.current[index] = element
-            }}
-            className="line-sidebar__item"
-            key={label}
-            style={{ '--effect': selectedIndex === index ? 1 : 0, fontWeight: selectedIndex === index ? 600 : 500, } as CSSProperties}
-          >
-            {showMarker && <span aria-hidden="true" className="line-sidebar__marker" />}
-            <button
-              aria-current={selectedIndex === index ? 'location' : undefined}
-              className="line-sidebar__label"
-              onClick={() => handleItemClick(index, label)}
-              type="button"
-            >
+        {items.map((label, index) => {
+          const href = hrefs?.[index]
+          const isActive = selectedIndex === index
+          const labelContent = (
+            <>
               {showIndex && (
                 <span className="line-sidebar__index">
                   {String(index + 1).padStart(2, '0')}
                 </span>
               )}
               <span className="line-sidebar__text">{label}</span>
-            </button>
-          </li>
-        ))}
+            </>
+          )
+
+          const handleAnchorClick = (
+            event: MouseEvent<HTMLAnchorElement>,
+          ) => {
+            if (
+              !onItemClick
+              || event.defaultPrevented
+              || event.button !== 0
+              || event.metaKey
+              || event.ctrlKey
+              || event.shiftKey
+              || event.altKey
+            ) {
+              return
+            }
+
+            event.preventDefault()
+            handleItemClick(index, label)
+          }
+
+          return (
+            <li
+              ref={(element) => {
+                itemRefs.current[index] = element
+              }}
+              className="line-sidebar__item"
+              key={label}
+              style={{
+                '--effect': isActive ? 1 : 0,
+                fontWeight: isActive ? 600 : 500,
+              } as CSSProperties}
+            >
+              {showMarker && (
+                <span
+                  aria-hidden="true"
+                  className="line-sidebar__marker"
+                />
+              )}
+
+              {href
+                ? (
+                  <a
+                    aria-current={isActive ? 'location' : undefined}
+                    className="line-sidebar__label"
+                    href={href}
+                    onClick={handleAnchorClick}
+                  >
+                    {labelContent}
+                  </a>
+                )
+                : (
+                  <button
+                    aria-current={isActive ? 'location' : undefined}
+                    className="line-sidebar__label"
+                    onClick={() => handleItemClick(index, label)}
+                    type="button"
+                  >
+                    {labelContent}
+                  </button>
+                )}
+            </li>
+          )
+        })}
       </ul>
     </nav>
   )

@@ -6,6 +6,15 @@
   cursor: pointer;
 }
 
+.between-demo__text-link {
+  color: var(--foreground);
+}
+
+.between-demo__text-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+
 .between-demo__stage {
   box-sizing: border-box;
   width: 100%;

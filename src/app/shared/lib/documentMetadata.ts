@@ -1,22 +1,32 @@
+import compatibility from '../../data/compatibility.json'
 import {
   docsSections,
   type DocsSectionId,
 } from '../../pages/docs/docsSections'
-import compatibility from '../../data/compatibility.json'
+import {
+  findSeoRoute,
+  indexRobots,
+  noindexRobots,
+  npmPackageUrl,
+  repositoryUrl,
+  resolveSeoRoute,
+  siteOrigin,
+  type SeoRouteDefinition,
+} from './seoRoutes'
 
-export const siteOrigin = 'https://www.routeveil.dev'
-export const repositoryUrl = 'https://github.com/milkevich/routeveil'
-export const npmPackageUrl = 'https://www.npmjs.com/package/routeveil'
-export const socialImageUrl = `${siteOrigin}/og-image-v3.png`
+export {
+  indexRobots,
+  npmPackageUrl,
+  repositoryUrl,
+  siteOrigin,
+  socialImageUrl,
+} from './seoRoutes'
+
 export const documentLocationChangeEvent = 'routeveil:document-location-change'
 export const structuredDataElementId = 'routeveil-structured-data'
+
 const licenseUrl = 'https://spdx.org/licenses/MIT.html'
-
-export const indexRobots =
-  'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
-
-const productDescription =
-  'Routeveil is an open-source React and TypeScript transition engine for React Router with typed page animations, shared elements, and full-screen overlays.'
+const productDescription = resolveSeoRoute('/').description
 
 const docsSectionDescriptions: Record<DocsSectionId, string> = {
   overview:
@@ -63,66 +73,17 @@ export interface RouteMetadata {
   openGraphType: 'article' | 'website'
 }
 
-const homeMetadata: RouteMetadata = {
-  title: 'Routeveil - React Router Transitions',
-  description: productDescription,
-  canonicalUrl: `${siteOrigin}/`,
-  robots: indexRobots,
-  openGraphType: 'website',
+function metadataFromRoute(route: SeoRouteDefinition): RouteMetadata {
+  return {
+    title: route.title,
+    description: route.description,
+    canonicalUrl: route.canonicalUrl,
+    robots: route.indexable ? indexRobots : noindexRobots,
+    openGraphType: route.openGraphType,
+  }
 }
 
-const docsMetadata: RouteMetadata = {
-  title: 'Routeveil Documentation - React Router Transitions',
-  description:
-    'Install Routeveil with npm install routeveil, then learn its typed React Router transition components, hooks, built-in effects, and options.',
-  canonicalUrl: `${siteOrigin}/docs`,
-  robots: indexRobots,
-  openGraphType: 'article',
-}
-
-const labMetadata: RouteMetadata = {
-  title: 'Routeveil Laboratory - Interactive Transition Demos',
-  description:
-    'Preview and customize Routeveil built-in React Router page and full-screen overlay transitions in the interactive laboratory.',
-  canonicalUrl: `${siteOrigin}/lab`,
-  robots: indexRobots,
-  openGraphType: 'website',
-}
-
-const betweenDemoMetadata: RouteMetadata = {
-  title: 'Routeveil Between Render Lab - React Router Transitions',
-  description:
-    'Preview Routeveil page and overlay transitions with custom between content, controlled timing, and same-page playback.',
-  canonicalUrl: `${siteOrigin}/lab/between`,
-  robots: indexRobots,
-  openGraphType: 'website',
-}
-
-const sharedElementsDemoMetadata: RouteMetadata = {
-  title: 'Routeveil Shared Elements Lab - React Router Transitions',
-  description:
-    'Preview shared-element transitions between React Router routes with Routeveil.',
-  canonicalUrl: `${siteOrigin}/lab/shared-elements`,
-  robots: indexRobots,
-  openGraphType: 'website',
-}
-
-const sharedElementsDetailMetadata: RouteMetadata = {
-  ...sharedElementsDemoMetadata,
-  title: 'Routeveil Shared Element Detail - React Router Transitions',
-  description:
-    'Inspect a selected gallery image and reverse its shared-element transition with Routeveil.',
-  canonicalUrl: `${siteOrigin}/lab/shared-elements/detail`,
-}
-
-const notFoundMetadata: RouteMetadata = {
-  title: 'Routeveil - Page Not Found',
-  description: 'The requested Routeveil page could not be found.',
-  canonicalUrl: null,
-  robots: 'noindex, follow',
-  openGraphType: 'website',
-}
-
+const docsMetadata = metadataFromRoute(resolveSeoRoute('/docs'))
 const docsSectionMetadata = new Map<string, RouteMetadata>(
   docsSections.map((section) => [
     section.id,
@@ -144,35 +105,18 @@ function decodeHash(hash: string): string {
   }
 }
 
-function isBetweenDemoPath(pathname: string): boolean {
-  return pathname === '/lab/between' || pathname === '/lab/between/'
-}
-
 export function resolveDocumentMetadata(
   pathname: string,
   hash = '',
 ): RouteMetadata {
-  if (pathname === '/docs' || pathname === '/docs/') {
-    return docsSectionMetadata.get(decodeHash(hash)) ?? docsMetadata
+  const route = resolveSeoRoute(pathname)
+
+  if (route.pathname === '/docs') {
+    return docsSectionMetadata.get(decodeHash(hash))
+      ?? metadataFromRoute(route)
   }
 
-  if (pathname === '/lab' || pathname === '/lab/') {
-    return labMetadata
-  }
-
-  if (isBetweenDemoPath(pathname)) {
-    return betweenDemoMetadata
-  }
-
-  if (pathname === '/lab/shared-elements') {
-    return sharedElementsDemoMetadata
-  }
-
-  if (pathname === '/lab/shared-elements/detail') {
-    return sharedElementsDetailMetadata
-  }
-
-  return pathname === '/' ? homeMetadata : notFoundMetadata
+  return metadataFromRoute(route)
 }
 
 type StructuredDataNode = Record<string, unknown>
@@ -248,27 +192,22 @@ function createCommonStructuredData(): StructuredDataNode[] {
   ]
 }
 
-function createBreadcrumb(
-  canonicalUrl: string,
-  name: string,
-): StructuredDataNode {
+function createBreadcrumb(route: SeoRouteDefinition): StructuredDataNode | null {
+  if (!route.canonicalUrl || route.breadcrumb.length < 2) return null
+
   return {
     '@type': 'BreadcrumbList',
-    '@id': `${canonicalUrl}#breadcrumb`,
-    itemListElement: [
-      {
+    '@id': `${route.canonicalUrl}#breadcrumb`,
+    itemListElement: route.breadcrumb.map((item, index) => {
+      const itemRoute = findSeoRoute(item.pathname)
+
+      return {
         '@type': 'ListItem',
-        position: 1,
-        name: 'Routeveil',
-        item: `${siteOrigin}/`,
-      },
-      {
-        '@type': 'ListItem',
-        position: 2,
-        name,
-        item: canonicalUrl,
-      },
-    ],
+        position: index + 1,
+        name: item.name,
+        item: itemRoute?.canonicalUrl,
+      }
+    }),
   }
 }
 
@@ -276,9 +215,10 @@ export function resolveStructuredData(
   pathname: string,
   hash = '',
 ): Record<string, unknown> | null {
+  const route = resolveSeoRoute(pathname)
   const metadata = resolveDocumentMetadata(pathname, hash)
 
-  if (!metadata.canonicalUrl) return null
+  if (!route.indexable || !metadata.canonicalUrl) return null
 
   const softwareId = `${siteOrigin}/#software`
   const websiteId = `${siteOrigin}/#website`
@@ -296,38 +236,27 @@ export function resolveStructuredData(
     mainEntity: { '@id': softwareId },
   }
 
-  const routeNodes: StructuredDataNode[] = [page]
-
-  if (pathname === '/docs' || pathname === '/docs/') {
+  if (route.structuredDataType === 'article') {
     Object.assign(page, {
       '@type': ['WebPage', 'TechArticle'],
       headline: metadata.title,
       author: { '@id': authorId },
-      breadcrumb: { '@id': `${siteOrigin}/docs#breadcrumb` },
     })
-    routeNodes.push(createBreadcrumb(`${siteOrigin}/docs`, 'Documentation'))
-  } else if (
-    pathname === '/lab'
-    || pathname === '/lab/'
-    || isBetweenDemoPath(pathname)
-    || pathname === '/lab/shared-elements'
-    || pathname === '/lab/shared-elements/detail'
-  ) {
+  } else if (route.structuredDataType === 'web-application') {
     Object.assign(page, {
       '@type': ['WebPage', 'WebApplication'],
       applicationCategory: 'DeveloperApplication',
       browserRequirements: 'JavaScript and a modern web browser',
       isAccessibleForFree: true,
-      breadcrumb: { '@id': `${metadata.canonicalUrl}#breadcrumb` },
     })
-    routeNodes.push(createBreadcrumb(
-      metadata.canonicalUrl,
-      pathname === '/lab' || pathname === '/lab/'
-        ? 'Laboratory'
-        : isBetweenDemoPath(pathname)
-          ? 'Between Render Demo'
-          : 'Shared Elements Demo',
-    ))
+  }
+
+  const routeNodes: StructuredDataNode[] = [page]
+  const breadcrumb = createBreadcrumb(route)
+
+  if (breadcrumb) {
+    page.breadcrumb = { '@id': `${metadata.canonicalUrl}#breadcrumb` }
+    routeNodes.push(breadcrumb)
   }
 
   return {

@@ -898,6 +898,7 @@ th:last-child {
     font: inherit;
     grid-template-columns: auto minmax(0, 1fr) auto;
     text-align: left;
+    text-decoration: none;
     transition:
       background-color 180ms ease,
       color 180ms ease,

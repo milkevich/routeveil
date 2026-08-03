@@ -4,8 +4,32 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import './index.css'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-)
+const root = document.getElementById('root')
+
+if (!root) {
+  throw new Error('Routeveil application root is missing.')
+}
+
+const mountApplication = () => {
+  createRoot(root).render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  )
+}
+
+if (router.state.initialized && !router.state.errors) {
+  mountApplication()
+} else {
+  const unsubscribe = router.subscribe((state) => {
+    if (state.errors) {
+      unsubscribe()
+      return
+    }
+
+    if (!state.initialized) return
+
+    unsubscribe()
+    mountApplication()
+  })
+}

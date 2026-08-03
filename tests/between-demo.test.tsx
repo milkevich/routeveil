@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BetweenDemoPage } from '../src/app/pages/lab/between/BetweenDemoPage'
@@ -16,6 +16,21 @@ beforeEach(() => {
 })
 
 describe('between render demo', () => {
+  it('explains between rendering with crawlable documentation links', () => {
+    render(
+      <MemoryRouter>
+        <BetweenDemoPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText(/minDuration/u)).toBeVisible()
+    expect(screen.getByText(/RouteveilBetween/u)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'between rendering guide' }))
+      .toHaveAttribute('href', '/docs#between-rendering')
+    expect(screen.getByRole('link', { name: 'Transition Laboratory' }))
+      .toHaveAttribute('href', '/lab')
+  })
+
   it('renders the twelve examples in their required order', () => {
     const view = render(
       <MemoryRouter>

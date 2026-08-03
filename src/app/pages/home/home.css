@@ -111,8 +111,12 @@
 
 .home-hero__router-link {
   color: inherit;
+  text-decoration: none;
+}
+
+.home-hero__router-link:hover {
   text-decoration: underline;
-  text-underline-offset: 0.12em;
+  text-underline-offset: 5px;
 }
 
 @keyframes home-hero-heading-reveal {

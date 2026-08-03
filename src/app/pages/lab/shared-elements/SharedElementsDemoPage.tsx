@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type MouseEvent,
   type SyntheticEvent,
 } from 'react'
 import { ArrowLeft, ArrowUpRight, Loader } from 'lucide-react'
@@ -774,20 +775,34 @@ function RouteB() {
     })
   }
 
+  const handleBackClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    void navigateBack()
+  }
+
   return (
     <article className="shared-gallery-detail">
-      <button
+      <a
         aria-busy={returning}
+        aria-disabled={returning || undefined}
         aria-label="Back to image gallery"
         className="shared-gallery-detail__back"
-        disabled={returning}
-        onClick={() => {
-          void navigateBack()
-        }}
-        type="button"
+        href="/lab/shared-elements"
+        onClick={handleBackClick}
       >
         <ArrowLeft aria-hidden="true" strokeWidth={2} />
-      </button>
+      </a>
 
       <RouteveilSharedElement name={`${post.id}-image`}>
         <img
@@ -859,14 +874,14 @@ function SharedElementsRoute({
           <div className="lab-hero__description-mask">
             <div className="lab-hero__description-reveal">
               <p className="lab-hero__description">
-                Shared elements stay visible between routes while the page
-                transition completes around them. Try the gallery below, or
-                learn more about{' '}
+                Routeveil matches named elements across React Router routes,
+                keeping them visible while the page transition completes
+                around them. Try the gallery below, or read the{' '}
                 <a
                   className="shared-elements-demo__text-link"
                   href="/docs#shared-elements"
                 >
-                  shared elements
+                  shared elements documentation
                 </a>
                 .
               </p>

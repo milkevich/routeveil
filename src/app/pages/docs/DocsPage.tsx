@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { MouseEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import LineSidebar from '../../shared/components/line-sidebar/LineSidebar'
 import { documentLocationChangeEvent } from '../../shared/lib/documentMetadata'
@@ -23,7 +24,7 @@ export function DocsPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const mobileScrollRef = useRef<HTMLDivElement | null>(null)
-  const mobileItemRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const mobileItemRefs = useRef<Array<HTMLAnchorElement | null>>([])
 
   const scrollToSection = useCallback((index: number) => {
     const section = docsSections[index]
@@ -44,7 +45,19 @@ export function DocsPage() {
   }, [])
 
   const handleMobileSectionClick = useCallback(
-    (index: number) => {
+    (event: MouseEvent<HTMLAnchorElement>, index: number) => {
+      if (
+        event.defaultPrevented
+        || event.button !== 0
+        || event.metaKey
+        || event.ctrlKey
+        || event.shiftKey
+        || event.altKey
+      ) {
+        return
+      }
+
+      event.preventDefault()
       setMobileNavOpen(false)
 
       window.requestAnimationFrame(() => {
@@ -215,6 +228,9 @@ export function DocsPage() {
             items={docsSections.map(
               (section) => section.label,
             )}
+            hrefs={docsSections.map(
+              (section) => `/docs#${section.id}`,
+            )}
             markerColor="#b7b7b7"
             markerLength={34}
             maxShift={10}
@@ -266,22 +282,22 @@ export function DocsPage() {
                 const isActive = index === activeIndex
 
                 return (
-                  <button
+                  <a
                     aria-current={
                       isActive ? 'location' : undefined
                     }
                     className={`docs-mobile-nav__item ${
                       isActive ? 'is-active' : ''
                     }`}
+                    href={`/docs#${section.id}`}
                     key={section.id}
-                    onClick={() =>
-                      handleMobileSectionClick(index)
+                    onClick={(event) =>
+                      handleMobileSectionClick(event, index)
                     }
                     ref={(node) => {
                       mobileItemRefs.current[index] = node
                     }}
                     tabIndex={mobileNavOpen ? 0 : -1}
-                    type="button"
                   >
                     <span className="docs-mobile-nav__number">
                       {String(index + 1).padStart(2, '0')}
@@ -295,7 +311,7 @@ export function DocsPage() {
                     >
                       ↗
                     </span>
-                  </button>
+                  </a>
                 )
               })}
             </div>

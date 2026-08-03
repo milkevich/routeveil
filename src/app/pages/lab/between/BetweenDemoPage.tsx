@@ -447,8 +447,21 @@ export function BetweenDemoPage() {
           <div className="lab-hero__description-mask">
             <div className="lab-hero__description-reveal">
               <p className="lab-hero__description">
-                Display custom content between transition phases without
-                leaving the current page.
+                Explore between-route React content with a requested{' '}
+                <code>minDuration</code>, supplied by the outgoing request or
+                an incoming <code>RouteveilBetween</code>, and preview it with
+                same-page playback without leaving the current route. Read the{' '}
+                <a
+                  className="between-demo__text-link"
+                  href="/docs#between-rendering"
+                >
+                  between rendering guide
+                </a>{' '}
+                or return to the{' '}
+                <a className="between-demo__text-link" href="/lab">
+                  Transition Laboratory
+                </a>
+                .
               </p>
             </div>
           </div>

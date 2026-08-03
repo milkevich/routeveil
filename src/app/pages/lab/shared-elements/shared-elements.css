@@ -1,6 +1,10 @@
 .shared-elements-demo__text-link {
   color: var(--foreground);
+}
+
+.shared-elements-demo__text-link:hover {
   text-decoration: underline;
+  text-underline-offset: 5px;
 }
 
 .shared-elements-demo__workbench {
@@ -117,6 +121,7 @@
   color: var(--foreground);
   background: transparent;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .shared-gallery-detail__back svg {

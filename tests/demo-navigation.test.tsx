@@ -7,8 +7,10 @@ import {
 } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { primaryNavigation, resolvePrimaryPath, routeDirection } from '../src/app/data/navigation'
+import { HomePage } from '../src/app/pages/home/HomePage'
 import { Header } from '../src/app/shared/UI/Header'
 import { RouteveilProvider, RouteveilView } from '../src/react-router'
+import { installBrowserMocks } from './browser-mocks'
 
 function NavigateWithinLab() {
   const navigate = useNavigate()
@@ -26,6 +28,41 @@ function NavigateWithinLab() {
 }
 
 describe('demo primary navigation', () => {
+  it('renders crawlable homepage product and resource links', () => {
+    const browser = installBrowserMocks()
+
+    try {
+      render(
+        <MemoryRouter>
+          <RouteveilProvider>
+            <HomePage />
+          </RouteveilProvider>
+        </MemoryRouter>,
+      )
+
+      expect(screen.getByRole('heading', {
+        level: 1,
+        name: 'Routeveil — React Router transitions',
+      })).toBeVisible()
+      expect(screen.getByRole('link', { name: 'Read the documentation' }))
+        .toHaveAttribute('href', '/docs')
+      expect(screen.getByRole('link', { name: 'Preview the transition laboratory' }))
+        .toHaveAttribute('href', '/lab')
+      expect(screen.getByRole('link', { name: 'Try between-route content' }))
+        .toHaveAttribute('href', '/lab/between')
+      expect(screen.getByRole('link', {
+        name: 'See shared elements match across routes',
+      })).toHaveAttribute('href', '/lab/shared-elements')
+      expect(screen.getByRole('link', { name: 'Explore the source on GitHub' }))
+        .toHaveAttribute('href', 'https://github.com/milkevich/routeveil')
+      expect(screen.getByRole('link', {
+        name: 'View the Routeveil package on npm',
+      })).toHaveAttribute('href', 'https://www.npmjs.com/package/routeveil')
+    } finally {
+      browser.restore()
+    }
+  })
+
   it('derives directions from the centralized route order', () => {
     expect(primaryNavigation.map((route) => route.path)).toEqual(['/', '/docs', '/lab'])
     expect(routeDirection('/', '/docs')).toBe('left')

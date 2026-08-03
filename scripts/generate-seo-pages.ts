@@ -6,184 +6,44 @@ import {
 } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { JSDOM } from 'jsdom'
-import { docsSections } from '../src/app/pages/docs/docsSections'
+import compatibility from '../src/app/data/compatibility.json'
+import { SeoStaticShell } from '../src/app/shared/SeoStaticShell'
 import {
-  indexRobots,
   resolveDocumentMetadata,
   resolveStructuredData,
-  socialImageUrl,
   structuredDataElementId,
 } from '../src/app/shared/lib/documentMetadata'
-
-type PageDefinition = {
-  file: string
-  fallback: string
-  pathname: string
-}
+import {
+  findSeoRoute,
+  indexRobots,
+  noindexRobots,
+  renderSitemapXml,
+  seoRouteRegistry,
+  siteOrigin,
+  socialImageUrl,
+  type SeoRouteDefinition,
+} from '../src/app/shared/lib/seoRoutes'
 
 const buildRoot = resolve(process.cwd(), 'dist/demo')
 const templatePath = resolve(buildRoot, 'index.html')
 const template = await readFile(templatePath, 'utf8')
-const compatibility = JSON.parse(
-  await readFile(
-    resolve(process.cwd(), 'src/app/data/compatibility.json'),
-    'utf8',
-  ),
-)
-const fallbackMarker = '__ROUTEVEIL_STATIC_FALLBACK__'
-const docsNavigation = docsSections
-  .map((section) => (
-    `<a href="/docs#${section.id}">${section.label}</a>`
-  ))
-  .join('\n')
-const compatibilityRangeRows = [
-  ['React', compatibility.supported.react],
-  ['React DOM', compatibility.supported.reactDom],
-  ['React Router DOM', compatibility.supported.reactRouterDom],
-]
-  .map(([dependency, range]) => (
-    `<tr><td>${dependency}</td><td><code>${range}</code></td></tr>`
-  ))
-  .join('\n')
-const pages: PageDefinition[] = [
-  {
-    file: 'index.html',
-    pathname: '/',
-    fallback: `
-      <main>
-        <h1>RouteVeil</h1>
-        <p>Choose the movement where navigation begins and keep route components clean. Per-navigation page and full-screen overlay transitions for React Router.</p>
-        <nav aria-label="Routeveil resources">
-          <a href="/docs#installation">Get Started</a>
-          <a href="/lab">Transitions</a>
-          <a href="https://github.com/milkevich/routeveil">GitHub</a>
-          <a href="https://www.npmjs.com/package/routeveil">npm</a>
-        </nav>
-      </main>
-    `,
-  },
-  {
-    file: 'docs.html',
-    pathname: '/docs',
-    fallback: `
-      <main>
-        <h1>Documentation</h1>
-        <p>Installation, API lifecycles, transition options, and copyable React Router examples for Routeveil.</p>
-        <section id="installation">
-          <h2>Installation</h2>
-          <pre><code>npm install routeveil</code></pre>
-          <p>Import Routeveil for React Router from <code>routeveil/react-router</code>.</p>
-        </section>
-        <section id="compatibility">
-          <h2>Compatibility</h2>
-          <table>
-            <caption>Supported versions</caption>
-            <thead><tr><th>Dependency</th><th>Range</th></tr></thead>
-            <tbody>${compatibilityRangeRows}</tbody>
-          </table>
-          <p>Routeveil is tested in CI across React 18 and 19 with supported React Router DOM 6 and 7 releases.</p>
-          <p>React Router 5 and React Router 8 are not currently supported. <a href="https://github.com/milkevich/routeveil/blob/main/src/app/data/compatibility.json">View the exact test matrix.</a></p>
-        </section>
-        <section id="between-rendering">
-          <h2>Between Rendering</h2>
-          <p>Pass between content to RouteveilLink, useRouteveilNavigate, or useRouteveilTransition. Navigation-level page content follows exit → between → navigate and prepare → enter. Navigation-level overlay content follows cover → between → navigate and prepare → reveal.</p>
-          <p>With only an incoming RouteveilBetween registration, navigation happens first; between content then appears before enter or reveal. Incoming content can replace a fallback, hold the phase with <code>while</code>, and contribute <code>minDuration</code>. Nested registrations combine requirements while the newest supplies visible content.</p>
-          <p>Content controls its own height and alignment. Page between content appears using the outgoing transition and disappears using the incoming transition; Routeveil uses each transition's complementary phase. Overlays retain cover and reveal while their between layer handles appearance and disappearance.</p>
-          <p>Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement. If shared movement has already started, Routeveil skips a later incoming between layer.</p>
-        </section>
-        <section id="interrupted-navigation">
-          <h2>Interrupted Navigation</h2>
-          <p>Routeveil runs one transition and one active promise at a time. Additional Routeveil navigation and playback requests reuse that promise without queueing or committing another destination.</p>
-          <p>Browser history and other external location changes cancel current visual work, leave the latest location in control, preserve meaningful application focus or focus the incoming RouteveilView with preventScroll, and clean up animations, inert state, temporary attributes, overlays, timers, location waiters, and transition phase.</p>
-        </section>
-        <section id="shared-elements">
-          <h2>Shared Elements</h2>
-          <p>RouteveilSharedElement connects matching real HTML or SVG elements across routes by a unique name without adding a layout wrapper.</p>
-          <p>Shared movement may overlap page exit, and page enter waits until movement completes. Shared movement and between rendering are mutually exclusive. Navigation-level between content disables shared movement; if movement has already started, Routeveil skips a later incoming between layer. Shared elements are not transitions named shared or shared-element. Multiple valid matches move concurrently, and missing or duplicate targets are skipped safely.</p>
-          <p>Use scrollToSharedElement with an exact incoming shared-element name to center it vertically while preserving horizontal scroll before endpoint measurement. URL hashes take precedence; valid anchors override preventScrollReset and smoothScrollToTop, while missing or duplicate anchors warn and fall back to the existing scroll policy. Reduced-motion navigation still applies valid anchor positioning.</p>
-          <p>Overlay transitions, same-page playback, browser-history navigation, and reduced-motion navigation do not run shared-element movement.</p>
-          <a href="/lab/shared-elements">Open the shared elements playground</a>
-        </section>
-        <nav aria-label="Documentation sections">
-          ${docsNavigation}
-        </nav>
-      </main>
-    `,
-  },
-  {
-    file: 'lab.html',
-    pathname: '/lab',
-    fallback: `
-      <main>
-        <h1>Laboratory</h1>
-        <p>Select any transition to run it directly on the current page. The route, URL, scroll position, and browser history stay unchanged.</p>
-        <section>
-          <h2>Page transitions</h2>
-          <p>Fade, blur, slide, spin, rotate, bounce, push, and pull.</p>
-        </section>
-        <section>
-          <h2>Overlay transitions</h2>
-          <p>Pixel, curtain, wipe, columns, rows, iris, halo, tunnel, clock, venetian, mosaic, and dissolve.</p>
-        </section>
-        <a href="/lab/between">Explore between-render transitions</a>
-        <a href="/lab/shared-elements">Explore shared-element transitions</a>
-        <a href="/docs">Read the Routeveil documentation</a>
-      </main>
-    `,
-  },
-  {
-    file: 'lab/between.html',
-    pathname: '/lab/between',
-    fallback: `
-      <main>
-        <h1>Between Render</h1>
-        <p>Preview page and overlay transitions with custom React content displayed between their outgoing and incoming phases.</p>
-        <p>Each example runs on the current route, preserves browser history and scroll position, and keeps its content visible for a configured minimum duration.</p>
-        <a href="/docs#between-rendering">Read the between-rendering documentation</a>
-        <a href="/lab">Return to the laboratory</a>
-      </main>
-    `,
-  },
-  {
-    file: 'lab/shared-elements.html',
-    pathname: '/lab/shared-elements',
-    fallback: `
-      <main>
-        <h1>Shared Elements</h1>
-        <p>Explore a masonry gallery of local images and open any post to preview a shared-element transition between real React Router routes.</p>
-        <p>The selected image may begin moving while page exit is active. The detail route enters only after movement finishes, then the real image takes over.</p>
-        <a href="/lab/shared-elements/detail">Open the shared elements detail</a>
-        <a href="/docs#shared-elements">Read the shared elements documentation</a>
-        <a href="/lab">Return to the laboratory</a>
-      </main>
-    `,
-  },
-  {
-    file: 'lab/shared-elements/detail.html',
-    pathname: '/lab/shared-elements/detail',
-    fallback: `
-      <main>
-        <h1>Shared Elements Detail</h1>
-        <p>Use the separate back control to play the selected image transition in reverse and return to its centered gallery position.</p>
-        <p>Routeveil matches the image by its unique name while the real application images remain the final source and target.</p>
-        <a href="/lab/shared-elements">Return to the shared elements overview</a>
-        <a href="/docs#shared-elements">Read the shared elements documentation</a>
-      </main>
-    `,
-  },
-  {
-    file: '404.html',
-    pathname: '/404',
-    fallback: `
-      <main>
-        <h1>(o_o)/</h1>
-        <p>Beyond the veil, this page doesn’t exist.</p>
-        <a href="/">Go Back</a>
-      </main>
-    `,
-  },
-]
+const generatedSitemap = renderSitemapXml()
+
+function invariant(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(`SEO build check failed: ${message}`)
+}
+
+async function exists(path: string) {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function upsertMeta(
   document: Document,
@@ -248,8 +108,8 @@ function updateStructuredData(
   document.head.append(element)
 }
 
-function applyMetadata(document: Document, pathname: string) {
-  const metadata = resolveDocumentMetadata(pathname)
+function applyMetadata(document: Document, route: SeoRouteDefinition) {
+  const metadata = resolveDocumentMetadata(route.pathname)
 
   document.title = metadata.title
   updateCanonical(document, metadata.canonicalUrl)
@@ -261,18 +121,8 @@ function applyMetadata(document: Document, pathname: string) {
   upsertMeta(document, 'property', 'og:title', metadata.title)
   upsertMeta(document, 'property', 'og:description', metadata.description)
   upsertMeta(document, 'property', 'og:url', metadata.canonicalUrl)
-  upsertMeta(
-    document,
-    'property',
-    'og:image',
-    socialImageUrl,
-  )
-  upsertMeta(
-    document,
-    'property',
-    'og:image:secure_url',
-    socialImageUrl,
-  )
+  upsertMeta(document, 'property', 'og:image', socialImageUrl)
+  upsertMeta(document, 'property', 'og:image:secure_url', socialImageUrl)
   upsertMeta(document, 'property', 'og:image:type', 'image/png')
   upsertMeta(document, 'property', 'og:image:width', '1200')
   upsertMeta(document, 'property', 'og:image:height', '630')
@@ -285,257 +135,655 @@ function applyMetadata(document: Document, pathname: string) {
   upsertMeta(document, 'name', 'twitter:card', 'summary_large_image')
   upsertMeta(document, 'name', 'twitter:title', metadata.title)
   upsertMeta(document, 'name', 'twitter:description', metadata.description)
-  upsertMeta(
-    document,
-    'name',
-    'twitter:image',
-    socialImageUrl,
-  )
+  upsertMeta(document, 'name', 'twitter:image', socialImageUrl)
   upsertMeta(
     document,
     'name',
     'twitter:image:alt',
     'Routeveil, React Router page and overlay transitions',
   )
-  updateStructuredData(document, resolveStructuredData(pathname))
+  updateStructuredData(document, resolveStructuredData(route.pathname))
 }
 
-function invariant(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(`SEO build check failed: ${message}`)
+function metaContent(
+  document: Document,
+  attribute: 'name' | 'property',
+  key: string,
+): string | null {
+  return document
+    .querySelector<HTMLMetaElement>(`meta[${attribute}="${key}"]`)
+    ?.getAttribute('content') ?? null
 }
 
-async function exists(path: string) {
+function parseStructuredData(
+  document: Document,
+  route: SeoRouteDefinition,
+): Record<string, unknown> | null {
+  const elements = document.querySelectorAll<HTMLScriptElement>(
+    'script[type="application/ld+json"]',
+  )
+
+  if (!route.indexable) {
+    invariant(elements.length === 0, `${route.pathname} must not emit JSON-LD`)
+    return null
+  }
+
+  invariant(elements.length === 1, `${route.pathname} needs one JSON-LD block`)
+
   try {
-    await access(path)
-    return true
+    return JSON.parse(elements[0]?.textContent ?? '') as Record<string, unknown>
   } catch {
-    return false
+    throw new Error(
+      `SEO build check failed: ${route.pathname} has invalid JSON-LD`,
+    )
   }
 }
 
-for (const page of pages) {
-  const dom = new JSDOM(template)
-  const { document } = dom.window
+function validateBreadcrumbs(
+  route: SeoRouteDefinition,
+  structuredData: Record<string, unknown> | null,
+) {
+  if (!structuredData) return
+
+  const graph = structuredData['@graph']
+  invariant(Array.isArray(graph), `${route.pathname} has no JSON-LD graph`)
+  const breadcrumbs = graph.filter((node) => (
+    typeof node === 'object'
+    && node !== null
+    && (node as Record<string, unknown>)['@type'] === 'BreadcrumbList'
+  )) as Array<Record<string, unknown>>
+
+  if (route.breadcrumb.length < 2) {
+    invariant(
+      breadcrumbs.length === 0,
+      `${route.pathname} has a meaningless breadcrumb`,
+    )
+    return
+  }
+
+  invariant(
+    breadcrumbs.length === 1,
+    `${route.pathname} needs one breadcrumb list`,
+  )
+  const items = breadcrumbs[0]?.itemListElement
+  invariant(
+    Array.isArray(items),
+    `${route.pathname} breadcrumb items are invalid`,
+  )
+
+  const canonicalUrls = new Set(
+    seoRouteRegistry
+      .map((candidate) => candidate.canonicalUrl)
+      .filter((value): value is string => Boolean(value)),
+  )
+
+  items.forEach((item, index) => {
+    invariant(
+      typeof item === 'object' && item !== null,
+      `${route.pathname} breadcrumb ${index + 1} is invalid`,
+    )
+    const listItem = item as Record<string, unknown>
+    invariant(
+      listItem.position === index + 1,
+      `${route.pathname} breadcrumb positions are not sequential`,
+    )
+    invariant(
+      typeof listItem.item === 'string'
+        && canonicalUrls.has(listItem.item),
+      `${route.pathname} breadcrumb item is not canonical`,
+    )
+  })
+
+  invariant(
+    (items.at(-1) as Record<string, unknown> | undefined)?.item
+      === route.canonicalUrl,
+    `${route.pathname} breadcrumb does not end at its canonical URL`,
+  )
+}
+
+function validateGeneratedHtmlWithoutJavaScript(
+  document: Document,
+  route: SeoRouteDefinition,
+) {
   const root = document.getElementById('root')
-  const metadata = resolveDocumentMetadata(page.pathname)
-  const fallbackDocument = new JSDOM(page.fallback).window.document
+  invariant(root, `${route.pathname} is missing the React root`)
+  invariant(root.children.length > 0, `${route.pathname} has an empty React root`)
+  invariant(
+    root.querySelectorAll('main').length === 1,
+    `${route.pathname} needs one initial main`,
+  )
+  invariant(
+    root.querySelectorAll('h1').length === 1,
+    `${route.pathname} needs one initial h1`,
+  )
 
-  invariant(root, `${page.pathname} is missing the React root`)
-  root.replaceChildren()
-  document.querySelectorAll('noscript[data-routeveil-fallback]')
-    .forEach((element) => element.remove())
+  const shell = root.querySelector<HTMLElement>('[data-routeveil-static-shell]')
+  invariant(shell, `${route.pathname} is missing its static shell`)
+  invariant(!shell.hidden, `${route.pathname} hides its static shell`)
+  invariant(
+    shell.getAttribute('aria-hidden') !== 'true',
+    `${route.pathname} hides its static shell from accessibility APIs`,
+  )
 
-  const fallback = document.createElement('noscript')
-  fallback.setAttribute('data-routeveil-fallback', '')
-  fallback.textContent = fallbackMarker
-  root.after(fallback)
-  applyMetadata(document, page.pathname)
+  const text = root.textContent?.replace(/\s+/gu, ' ').trim() ?? ''
+  invariant(text.length > 160, `${route.pathname} has no meaningful initial copy`)
+  invariant(
+    text.includes(route.staticSummary),
+    `${route.pathname} is missing its route summary`,
+  )
+  invariant(
+    root.querySelector('h1')?.textContent?.trim() === route.heading,
+    `${route.pathname} has the wrong initial heading`,
+  )
 
-  invariant(root.childNodes.length === 0, `${page.pathname} must keep an empty React root`)
-  invariant(document.title === metadata.title, `${page.pathname} has the wrong title`)
+  const internalLinks = [
+    ...root.querySelectorAll<HTMLAnchorElement>('a[href^="/"]'),
+  ]
   invariant(
-    document.querySelectorAll('link[rel="canonical"]').length
-      === (metadata.canonicalUrl ? 1 : 0),
-    `${page.pathname} has the wrong canonical count`,
+    internalLinks.length > 0,
+    `${route.pathname} needs a crawlable internal link`,
   )
   invariant(
-    document.querySelector('meta[name="robots"]')?.getAttribute('content')
-      === metadata.robots,
-    `${page.pathname} has the wrong robots directive`,
+    internalLinks.every((link) => Boolean(link.textContent?.trim())),
+    `${route.pathname} has a link without descriptive text`,
   )
   invariant(
-    fallbackDocument.querySelectorAll('main').length === 1
-      && fallbackDocument.querySelectorAll('h1').length === 1,
-    `${page.pathname} needs one fallback main and h1`,
-  )
-  invariant(
-    (fallbackDocument.body.textContent?.trim().length ?? 0) > 40,
-    `${page.pathname} has no crawler fallback copy`,
-  )
-  invariant(
-    Boolean(document.querySelector('link[rel="stylesheet"][href]')),
-    `${page.pathname} is missing the application stylesheet`,
+    document.querySelectorAll('noscript[data-routeveil-fallback]').length === 0,
+    `${route.pathname} still contains the obsolete noscript fallback`,
   )
   invariant(
     Boolean(document.querySelector('script[type="module"][src]')),
-    `${page.pathname} is missing the original client entry`,
-  )
-  invariant(
-    Boolean(document.getElementById(structuredDataElementId))
-      === Boolean(metadata.canonicalUrl),
-    `${page.pathname} has the wrong structured data state`,
-  )
-
-  if (page.pathname === '/docs') {
-    invariant(
-      fallbackDocument.body.textContent?.includes('npm install routeveil'),
-      'documentation fallback has the wrong install command',
-    )
-    invariant(
-      Boolean(fallbackDocument.getElementById('interrupted-navigation'))
-        && fallbackDocument.body.textContent?.includes('Interrupted Navigation')
-        && Boolean(fallbackDocument.querySelector(
-          'a[href="/docs#interrupted-navigation"]',
-        )),
-      'documentation fallback is missing interrupted navigation',
-    )
-    invariant(
-      Boolean(fallbackDocument.getElementById('compatibility'))
-        && Boolean(fallbackDocument.querySelector(
-          'a[href="/docs#compatibility"]',
-        ))
-        && fallbackDocument.body.textContent?.includes(
-          compatibility.supported.reactRouterDom,
-        ),
-      'documentation fallback is missing compatibility',
-    )
-    invariant(
-      Boolean(fallbackDocument.getElementById('between-rendering'))
-        && Boolean(fallbackDocument.querySelector(
-          'a[href="/docs#between-rendering"]',
-        ))
-        && fallbackDocument.body.textContent?.includes(
-          'incoming RouteveilBetween registration',
-        ),
-      'documentation fallback is missing between rendering',
-    )
-    invariant(
-      Boolean(fallbackDocument.getElementById('shared-elements'))
-        && Boolean(fallbackDocument.querySelector(
-          'a[href="/docs#shared-elements"]',
-        ))
-        && fallbackDocument.body.textContent?.includes(
-          'mutually exclusive',
-        ),
-      'documentation fallback is missing shared elements',
-    )
-  }
-
-  if (page.pathname === '/lab') {
-    invariant(
-      Boolean(fallbackDocument.querySelector(
-        'a[href="/lab/shared-elements"]',
-      ))
-        && Boolean(fallbackDocument.querySelector(
-          'a[href="/lab/between"]',
-        )),
-      'laboratory fallback is missing a transition demo',
-    )
-  }
-
-  if (page.pathname === '/lab/between') {
-    invariant(
-      Boolean(fallbackDocument.querySelector(
-        'a[href="/docs#between-rendering"]',
-      )),
-      'between-render fallback is missing its documentation link',
-    )
-  }
-
-  if (
-    page.pathname === '/lab/shared-elements'
-    || page.pathname === '/lab/shared-elements/detail'
-  ) {
-    invariant(
-      Boolean(fallbackDocument.querySelector(
-        'a[href="/docs#shared-elements"]',
-      )),
-      `${page.pathname} fallback is missing shared elements documentation`,
-    )
-  }
-
-  const serialized = `<!doctype html>\n${document.documentElement.outerHTML}\n`
-  invariant(serialized.includes(fallbackMarker), `${page.pathname} lost its fallback marker`)
-  const output = serialized.replace(fallbackMarker, page.fallback.trim())
-  await mkdir(resolve(buildRoot, page.file, '..'), { recursive: true })
-  await writeFile(resolve(buildRoot, page.file), output)
-}
-
-const indexDocument = new JSDOM(
-  await readFile(resolve(buildRoot, 'index.html'), 'utf8'),
-).window.document
-const stylesheet = indexDocument.querySelector<HTMLLinkElement>(
-  'link[rel="stylesheet"][href]',
-)?.getAttribute('href')
-const moduleScript = indexDocument.querySelector<HTMLScriptElement>(
-  'script[type="module"][src]',
-)?.getAttribute('src')
-
-for (const asset of [stylesheet, moduleScript]) {
-  invariant(asset?.startsWith('/assets/'), 'built asset URL is invalid')
-  invariant(
-    await exists(resolve(buildRoot, asset.slice(1))),
-    `built asset is missing: ${asset}`,
+    `${route.pathname} is missing the client application entry`,
   )
 }
 
-const socialImagePath = new URL(socialImageUrl).pathname.slice(1)
+function validateMetadata(
+  document: Document,
+  route: SeoRouteDefinition,
+  sitemapUrls: Set<string>,
+) {
+  const metadata = resolveDocumentMetadata(route.pathname)
+  const canonicals = document.querySelectorAll<HTMLLinkElement>(
+    'link[rel="canonical"]',
+  )
+
+  invariant(document.documentElement.lang === 'en', `${route.pathname} needs lang=en`)
+  invariant(document.title === route.title, `${route.pathname} has the wrong title`)
+  invariant(
+    metaContent(document, 'name', 'description') === route.description,
+    `${route.pathname} has the wrong description`,
+  )
+  invariant(
+    canonicals.length === (route.canonicalUrl ? 1 : 0),
+    `${route.pathname} has the wrong canonical count`,
+  )
+  if (route.canonicalUrl) {
+    invariant(
+      canonicals[0]?.href === route.canonicalUrl,
+      `${route.pathname} has the wrong canonical URL`,
+    )
+  }
+  invariant(
+    metaContent(document, 'name', 'robots')
+      === (route.indexable ? indexRobots : noindexRobots),
+    `${route.pathname} has the wrong robots directive`,
+  )
+  invariant(
+    metaContent(document, 'property', 'og:title') === metadata.title
+      && metaContent(document, 'property', 'og:description')
+        === metadata.description
+      && metaContent(document, 'property', 'og:url')
+        === metadata.canonicalUrl
+      && metaContent(document, 'property', 'og:image') === socialImageUrl,
+    `${route.pathname} has mismatched Open Graph metadata`,
+  )
+  invariant(
+    metaContent(document, 'name', 'twitter:title') === metadata.title
+      && metaContent(document, 'name', 'twitter:description')
+        === metadata.description
+      && metaContent(document, 'name', 'twitter:image') === socialImageUrl,
+    `${route.pathname} has mismatched Twitter metadata`,
+  )
+
+  if (route.indexable) {
+    invariant(
+      route.canonicalUrl !== null && sitemapUrls.has(route.canonicalUrl),
+      `${route.pathname} canonical URL is missing from the sitemap`,
+    )
+  } else {
+    invariant(
+      !route.canonicalUrl || !sitemapUrls.has(route.canonicalUrl),
+      `${route.pathname} is noindex but appears in the sitemap`,
+    )
+  }
+}
+
+function localAssetPath(reference: string): string | null {
+  try {
+    const url = new URL(reference, siteOrigin)
+    if (url.origin !== siteOrigin) return null
+    return url.pathname.slice(1)
+  } catch {
+    return null
+  }
+}
+
+async function validateAssets(document: Document, route: SeoRouteDefinition) {
+  const references = [
+    ...document.querySelectorAll<HTMLLinkElement>(
+      'link[rel="stylesheet"][href], link[rel~="icon"][href], link[rel="apple-touch-icon"][href], link[rel="manifest"][href], link[rel="sitemap"][href]',
+    ),
+    ...document.querySelectorAll<HTMLElement>('[src]'),
+  ].map((element) => element.getAttribute('href') ?? element.getAttribute('src'))
+
+  for (const element of document.querySelectorAll<HTMLElement>('[srcset]')) {
+    const srcset = element.getAttribute('srcset') ?? ''
+    references.push(...srcset.split(',').map((candidate) => (
+      candidate.trim().split(/\s+/u)[0] ?? null
+    )))
+  }
+
+  references.push(
+    metaContent(document, 'property', 'og:image'),
+    metaContent(document, 'property', 'og:image:secure_url'),
+    metaContent(document, 'name', 'twitter:image'),
+  )
+
+  for (const reference of new Set(references)) {
+    invariant(reference, `${route.pathname} has an empty asset reference`)
+    const path = localAssetPath(reference)
+    if (!path) continue
+    invariant(
+      await exists(resolve(buildRoot, path)),
+      `${route.pathname} references a missing asset: ${reference}`,
+    )
+  }
+}
+
+function parseSitemap(sitemap: string): string[] {
+  const document = new JSDOM(sitemap, { contentType: 'text/xml' }).window.document
+  invariant(
+    document.querySelectorAll('parsererror').length === 0,
+    'sitemap XML is invalid',
+  )
+  invariant(
+    document.querySelectorAll('priority, changefreq, lastmod').length === 0,
+    'sitemap contains unsupported freshness or ranking hints',
+  )
+  return [...document.querySelectorAll('loc')]
+    .map((element) => element.textContent?.trim() ?? '')
+}
+
+function validateSitemap(sitemap: string): Set<string> {
+  const urls = parseSitemap(sitemap)
+  const uniqueUrls = new Set(urls)
+  const expectedUrls = seoRouteRegistry
+    .filter((route) => route.indexable && route.includeInSitemap)
+    .map((route) => route.canonicalUrl)
+
+  invariant(urls.length === uniqueUrls.size, 'sitemap URLs are not unique')
+  invariant(
+    JSON.stringify(urls) === JSON.stringify(expectedUrls),
+    'sitemap has drifted from the SEO route registry',
+  )
+
+  for (const value of urls) {
+    const url = new URL(value)
+    invariant(url.protocol === 'https:', `sitemap URL is not HTTPS: ${value}`)
+    invariant(url.hostname === 'www.routeveil.dev', `sitemap URL is not on www: ${value}`)
+    invariant(!url.hash, `sitemap URL contains a hash: ${value}`)
+    invariant(url.pathname !== '/404', 'sitemap points to the 404 page')
+    invariant(
+      url.pathname === '/' || !url.pathname.endsWith('/'),
+      `sitemap URL has a trailing slash: ${value}`,
+    )
+  }
+
+  return uniqueUrls
+}
+
+function validateRouteRegistry() {
+  const pathnames = new Set<string>()
+  const files = new Set<string>()
+  const canonicalUrls = new Set<string>()
+  const indexableTitles = new Set<string>()
+  const indexableDescriptions = new Set<string>()
+
+  for (const route of seoRouteRegistry) {
+    invariant(!pathnames.has(route.pathname), `duplicate route ${route.pathname}`)
+    invariant(!files.has(route.file), `duplicate output file ${route.file}`)
+    pathnames.add(route.pathname)
+    files.add(route.file)
+
+    if (route.canonicalUrl) {
+      const canonical = new URL(route.canonicalUrl)
+      invariant(
+        canonical.origin === siteOrigin
+          && canonical.pathname === route.pathname
+          && canonical.search === ''
+          && canonical.hash === '',
+        `${route.pathname} canonical URL is not a final route URL`,
+      )
+      invariant(
+        !canonicalUrls.has(route.canonicalUrl),
+        `duplicate canonical URL ${route.canonicalUrl}`,
+      )
+      canonicalUrls.add(route.canonicalUrl)
+    }
+
+    if (route.indexable) {
+      invariant(route.includeInSitemap, `${route.pathname} is missing from the sitemap`)
+      invariant(
+        !indexableTitles.has(route.title),
+        `${route.pathname} has a duplicate title`,
+      )
+      invariant(
+        !indexableDescriptions.has(route.description),
+        `${route.pathname} has a duplicate description`,
+      )
+      indexableTitles.add(route.title)
+      indexableDescriptions.add(route.description)
+    }
+  }
+}
+
+function decodeFragment(hash: string): string {
+  try {
+    return decodeURIComponent(hash.slice(1))
+  } catch {
+    return hash.slice(1)
+  }
+}
+
+function validateInternalLinks(documents: Map<string, Document>) {
+  for (const [pathname, document] of documents) {
+    for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+      '#root a[href]',
+    )) {
+      const href = anchor.getAttribute('href')
+      invariant(href, `${pathname} has an empty link`)
+      const url = new URL(href, `${siteOrigin}${pathname}`)
+      if (url.origin !== siteOrigin) continue
+
+      const targetRoute = findSeoRoute(url.pathname)
+      invariant(targetRoute, `${pathname} links to an unknown route: ${href}`)
+      invariant(
+        url.pathname === targetRoute.pathname,
+        `${pathname} links to a redirected route: ${href}`,
+      )
+
+      if (!url.hash) continue
+      const targetDocument = documents.get(targetRoute.pathname)
+      const targetId = decodeFragment(url.hash)
+      invariant(
+        targetDocument?.getElementById(targetId),
+        `${pathname} links to a missing fragment: ${href}`,
+      )
+    }
+  }
+}
+
+function validateHomepageReachability(documents: Map<string, Document>) {
+  const pending = ['/']
+  const visited = new Set<string>()
+
+  while (pending.length > 0) {
+    const pathname = pending.shift()
+    if (!pathname || visited.has(pathname)) continue
+    visited.add(pathname)
+    const document = documents.get(pathname)
+    if (!document) continue
+
+    for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+      '#root a[href^="/"]',
+    )) {
+      const linkedPathname = new URL(anchor.href, siteOrigin).pathname
+      const route = seoRouteRegistry.find(
+        (candidate) => candidate.pathname === linkedPathname,
+      )
+      if (route?.indexable && !visited.has(route.pathname)) {
+        pending.push(route.pathname)
+      }
+    }
+  }
+
+  for (const route of seoRouteRegistry.filter((candidate) => candidate.indexable)) {
+    invariant(
+      visited.has(route.pathname),
+      `${route.pathname} is not crawlably reachable from the homepage`,
+    )
+  }
+}
+
+async function validateVercelConfiguration() {
+  const configuration = JSON.parse(
+    await readFile(resolve(process.cwd(), 'vercel.json'), 'utf8'),
+  ) as Record<string, unknown>
+  const redirects = Array.isArray(configuration.redirects)
+    ? configuration.redirects as Array<Record<string, unknown>>
+    : []
+  const preferredHostRedirect = redirects.find((redirect) => (
+    redirect.source === '/:path*'
+    && redirect.destination === 'https://www.routeveil.dev/:path*'
+    && redirect.permanent === true
+    && Array.isArray(redirect.has)
+    && redirect.has.some((condition) => (
+      typeof condition === 'object'
+      && condition !== null
+      && (condition as Record<string, unknown>).type === 'host'
+      && (condition as Record<string, unknown>).value === 'routeveil.dev'
+    ))
+  ))
+
+  invariant(configuration.framework === 'vite', 'Vercel framework is not Vite')
+  invariant(
+    configuration.buildCommand === 'npm run build:demo',
+    'Vercel uses the wrong build command',
+  )
+  invariant(
+    configuration.outputDirectory === 'dist/demo',
+    'Vercel uses the wrong output directory',
+  )
+  invariant(configuration.cleanUrls === true, 'Vercel clean URLs are disabled')
+  invariant(
+    configuration.trailingSlash === false,
+    'Vercel trailing-slash redirects are disabled',
+  )
+  invariant(preferredHostRedirect, 'Vercel preferred-host redirect is invalid')
+  invariant(
+    redirects.length === 1,
+    'Vercel has an unexpected redirect outside canonical host normalization',
+  )
+
+  const rewrites = Array.isArray(configuration.rewrites)
+    ? configuration.rewrites as Array<Record<string, unknown>>
+    : []
+  invariant(
+    !rewrites.some((rewrite) => rewrite.destination === '/index.html'),
+    'Vercel SPA fallback would prevent real 404 responses',
+  )
+}
+
+function parseRobotsGroups(robots: string) {
+  const groups: Array<{
+    agents: string[]
+    directives: Array<{ name: string; value: string }>
+  }> = []
+  let agents: string[] = []
+  let directives: Array<{ name: string; value: string }> = []
+
+  const finishGroup = () => {
+    if (agents.length === 0) return
+    groups.push({ agents, directives })
+    agents = []
+    directives = []
+  }
+
+  for (const sourceLine of robots.split(/\r?\n/u)) {
+    const line = sourceLine.replace(/\s*#.*$/u, '').trim()
+    if (!line) continue
+    const separator = line.indexOf(':')
+    if (separator < 0) continue
+    const name = line.slice(0, separator).trim().toLowerCase()
+    const value = line.slice(separator + 1).trim()
+
+    if (name === 'user-agent') {
+      if (directives.length > 0) finishGroup()
+      agents.push(value.toLowerCase())
+    } else if (agents.length > 0) {
+      directives.push({ name, value })
+    }
+  }
+
+  finishGroup()
+  return groups
+}
+
+function validateRobots(robots: string) {
+  const groups = parseRobotsGroups(robots)
+  const wildcard = groups.find((group) => group.agents.includes('*'))
+  const googlebot = groups.find((group) => group.agents.includes('googlebot'))
+
+  invariant(
+    wildcard?.directives.some((directive) => (
+      directive.name === 'allow' && directive.value === '/'
+    )),
+    'robots.txt does not allow general search crawlers',
+  )
+  invariant(
+    !wildcard?.directives.some((directive) => (
+      directive.name === 'disallow' && directive.value !== ''
+    )),
+    'robots.txt blocks public routes for general search crawlers',
+  )
+  invariant(
+    !googlebot?.directives.some((directive) => (
+      directive.name === 'disallow' && directive.value !== ''
+    )),
+    'robots.txt blocks public routes for Googlebot',
+  )
+  invariant(
+    robots.includes('Sitemap: https://www.routeveil.dev/sitemap.xml'),
+    'robots.txt has the wrong sitemap URL',
+  )
+  invariant(
+    robots.includes('User-agent: OAI-SearchBot'),
+    'robots.txt is missing AI search access',
+  )
+}
+
+function validateAiReferences(llms: string, llmsFull: string) {
+  invariant(
+    llms.includes('npm install routeveil')
+      && llmsFull.includes('npm install routeveil'),
+    'AI-readable references have the wrong install command',
+  )
+
+  for (const range of Object.values<string>(compatibility.supported)) {
+    invariant(
+      llms.includes(range) && llmsFull.includes(range),
+      `AI-readable references are missing compatibility range ${range}`,
+    )
+  }
+
+  for (const fixture of compatibility.fixtures) {
+    const versions = [
+      `React ${fixture.react}`,
+      `React DOM ${fixture.reactDom}`,
+      `React Router DOM ${fixture.reactRouterDom}`,
+    ]
+
+    invariant(
+      versions.every((version) => (
+        llms.includes(version) && llmsFull.includes(version)
+      )),
+      `AI-readable references are missing compatibility fixture ${fixture.id}`,
+    )
+  }
+
+  invariant(
+    llms.includes('Interrupted navigation')
+      && llmsFull.includes('Interrupted navigation'),
+    'AI-readable references are missing interrupted navigation',
+  )
+  invariant(
+    llms.includes('Shared elements')
+      && llms.includes('https://www.routeveil.dev/lab/shared-elements')
+      && llmsFull.includes('Shared elements')
+      && llmsFull.includes('https://www.routeveil.dev/lab/shared-elements'),
+    'AI-readable references are missing shared elements',
+  )
+  invariant(
+    llms.includes('RouteveilBetween')
+      && llms.includes('https://www.routeveil.dev/lab/between')
+      && llmsFull.includes('RouteveilBetween')
+      && llmsFull.includes('https://www.routeveil.dev/lab/between')
+      && llmsFull.includes('data-routeveil-phase="between"'),
+    'AI-readable references are missing between rendering',
+  )
+}
+
+validateRouteRegistry()
+
+for (const route of seoRouteRegistry) {
+  const dom = new JSDOM(template)
+  const { document } = dom.window
+  const root = document.getElementById('root')
+
+  invariant(root, `${route.pathname} is missing the React root`)
+  root.innerHTML = renderToStaticMarkup(
+    createElement(SeoStaticShell, { route }),
+  )
+  applyMetadata(document, route)
+
+  const output = `<!doctype html>\n${document.documentElement.outerHTML}\n`
+  invariant(
+    !output.includes('__ROUTEVEIL_STATIC_FALLBACK__'),
+    `${route.pathname} contains the obsolete fallback marker`,
+  )
+  await mkdir(resolve(buildRoot, route.file, '..'), { recursive: true })
+  await writeFile(resolve(buildRoot, route.file), output)
+}
+
+await writeFile(resolve(buildRoot, 'sitemap.xml'), generatedSitemap)
+
+const sourceSitemap = await readFile(
+  resolve(process.cwd(), 'public/sitemap.xml'),
+  'utf8',
+)
 invariant(
-  await exists(resolve(buildRoot, socialImagePath)),
-  `built social image is missing: ${socialImagePath}`,
+  sourceSitemap === generatedSitemap,
+  'public/sitemap.xml has drifted; run npm run generate:sitemap',
 )
 
 const sitemap = await readFile(resolve(buildRoot, 'sitemap.xml'), 'utf8')
+const sitemapUrls = validateSitemap(sitemap)
+const documents = new Map<string, Document>()
+
+for (const route of seoRouteRegistry) {
+  const outputPath = resolve(buildRoot, route.file)
+  invariant(await exists(outputPath), `${route.pathname} output file is missing`)
+  const output = await readFile(outputPath, 'utf8')
+  const document = new JSDOM(output).window.document
+
+  validateGeneratedHtmlWithoutJavaScript(document, route)
+  validateMetadata(document, route, sitemapUrls)
+  const structuredData = parseStructuredData(document, route)
+  validateBreadcrumbs(route, structuredData)
+  await validateAssets(document, route)
+  documents.set(route.pathname, document)
+}
+
+validateInternalLinks(documents)
+validateHomepageReachability(documents)
+await validateVercelConfiguration()
+
 const robots = await readFile(resolve(buildRoot, 'robots.txt'), 'utf8')
 const llms = await readFile(resolve(buildRoot, 'llms.txt'), 'utf8')
 const llmsFull = await readFile(resolve(buildRoot, 'llms-full.txt'), 'utf8')
+validateRobots(robots)
+validateAiReferences(llms, llmsFull)
 
-invariant(sitemap.includes('https://www.routeveil.dev/docs'), 'sitemap is missing docs')
-invariant(
-  sitemap.includes('https://www.routeveil.dev/lab/between')
-    && !sitemap.includes('https://www.routeveil.dev/lab/between/'),
-  'sitemap between-render routes are invalid',
+process.stdout.write(
+  'SEO pages verified with meaningful static roots, canonical sitemap entries, crawlable links, structured data, and redirect safeguards.\n',
 )
-invariant(
-  sitemap.includes('https://www.routeveil.dev/lab/shared-elements')
-    && !sitemap.includes('https://www.routeveil.dev/lab/shared-elements/detail'),
-  'sitemap shared elements routes are invalid',
-)
-invariant(robots.includes('User-agent: OAI-SearchBot'), 'robots is missing AI search access')
-invariant(robots.includes('Sitemap: https://www.routeveil.dev/sitemap.xml'), 'robots has the wrong sitemap')
-invariant(llms.includes('npm install routeveil'), 'llms.txt has the wrong install command')
-invariant(llmsFull.includes('npm install routeveil'), 'llms-full.txt has the wrong install command')
-for (const range of Object.values<string>(compatibility.supported)) {
-  invariant(
-    llms.includes(range) && llmsFull.includes(range),
-    `AI-readable references are missing compatibility range ${range}`,
-  )
-}
-
-for (const fixture of compatibility.fixtures) {
-  const versions = [
-    `React ${fixture.react}`,
-    `React DOM ${fixture.reactDom}`,
-    `React Router DOM ${fixture.reactRouterDom}`,
-  ]
-
-  invariant(
-    versions.every((version) => (
-      llms.includes(version) && llmsFull.includes(version)
-    )),
-    `AI-readable references are missing compatibility fixture ${fixture.id}`,
-  )
-}
-invariant(
-  llms.includes('Interrupted navigation')
-    && llmsFull.includes('Interrupted navigation'),
-  'AI-readable references are missing interrupted navigation',
-)
-invariant(
-  llms.includes('Shared elements')
-    && llms.includes('https://www.routeveil.dev/lab/shared-elements')
-    && llmsFull.includes('Shared elements')
-    && llmsFull.includes('https://www.routeveil.dev/lab/shared-elements'),
-  'AI-readable references are missing shared elements',
-)
-invariant(
-  llms.includes('RouteveilBetween')
-    && llms.includes('https://www.routeveil.dev/lab/between')
-    && llmsFull.includes('RouteveilBetween')
-    && llmsFull.includes('https://www.routeveil.dev/lab/between')
-    && llmsFull.includes("data-routeveil-phase=\"between\""),
-  'AI-readable references are missing between rendering',
-)
-invariant(indexRobots.startsWith('index, follow'), 'indexing directives are invalid')
-
-process.stdout.write('SEO shells verified without changing the React root or client entry.\n')

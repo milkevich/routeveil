@@ -49,6 +49,7 @@
     "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
     "build:demo": "vite build && node --import tsx scripts/generate-seo-pages.ts",
     "build": "npm run typecheck && npm run build:lib && npm run build:demo",
+    "generate:sitemap": "node --import tsx scripts/generate-sitemap.ts",
     "lint": "eslint .",
     "lint:package": "publint --pack false --strict",
     "test": "vitest run",
