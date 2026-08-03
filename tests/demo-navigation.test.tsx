@@ -28,7 +28,7 @@ function NavigateWithinLab() {
 }
 
 describe('demo primary navigation', () => {
-  it('renders crawlable homepage product and resource links', () => {
+  it('renders the unchanged homepage heading and crawlable links', () => {
     const browser = installBrowserMocks()
 
     try {
@@ -42,22 +42,16 @@ describe('demo primary navigation', () => {
 
       expect(screen.getByRole('heading', {
         level: 1,
-        name: 'Routeveil — React Router transitions',
+        name: 'RouteVeil',
       })).toBeVisible()
-      expect(screen.getByRole('link', { name: 'Read the documentation' }))
-        .toHaveAttribute('href', '/docs')
-      expect(screen.getByRole('link', { name: 'Preview the transition laboratory' }))
+      expect(screen.getByRole('link', { name: 'Get Started' }))
+        .toHaveAttribute('href', '/docs#installation')
+      expect(screen.getByRole('link', { name: 'Transitions' }))
         .toHaveAttribute('href', '/lab')
-      expect(screen.getByRole('link', { name: 'Try between-route content' }))
-        .toHaveAttribute('href', '/lab/between')
-      expect(screen.getByRole('link', {
-        name: 'See shared elements match across routes',
-      })).toHaveAttribute('href', '/lab/shared-elements')
-      expect(screen.getByRole('link', { name: 'Explore the source on GitHub' }))
+      expect(screen.getByRole('link', { name: 'React Router' }))
+        .toHaveAttribute('href', 'https://reactrouter.com/')
+      expect(screen.getByRole('link', { name: 'GitHub' }))
         .toHaveAttribute('href', 'https://github.com/milkevich/routeveil')
-      expect(screen.getByRole('link', {
-        name: 'View the Routeveil package on npm',
-      })).toHaveAttribute('href', 'https://www.npmjs.com/package/routeveil')
     } finally {
       browser.restore()
     }

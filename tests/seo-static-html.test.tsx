@@ -1,32 +1,19 @@
-import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { SeoStaticShell } from '../src/app/shared/SeoStaticShell'
 import {
   resolveDocumentMetadata,
   resolveStructuredData,
 } from '../src/app/shared/lib/documentMetadata'
 import {
   escapeXml,
-  findSeoRoute,
   indexRobots,
   noindexRobots,
   renderSitemapXml,
   resolveSeoRoute,
   seoRouteRegistry,
   siteOrigin,
-  type SeoRouteDefinition,
 } from '../src/app/shared/lib/seoRoutes'
 
 type StructuredDataNode = Record<string, unknown>
-
-function renderStaticDocument(route: SeoRouteDefinition): Document {
-  const markup = renderToStaticMarkup(<SeoStaticShell route={route} />)
-
-  return new DOMParser().parseFromString(
-    `<!doctype html><html lang="en"><body><div id="root">${markup}</div></body></html>`,
-    'text/html',
-  )
-}
 
 function structuredDataGraph(pathname: string): StructuredDataNode[] {
   const structuredData = resolveStructuredData(pathname)
@@ -46,113 +33,19 @@ function nodeTypes(node: StructuredDataNode): string[] {
   return Array.isArray(value) ? value as string[] : [String(value)]
 }
 
-describe('SEO static route shells', () => {
-  for (const route of seoRouteRegistry) {
-    it(`renders understandable initial HTML for ${route.pathname}`, () => {
-      const staticDocument = renderStaticDocument(route)
-      const root = staticDocument.getElementById('root')
-      const main = root?.querySelector('main')
-      const heading = root?.querySelector('h1')
-      const text = root?.textContent?.replace(/\s+/gu, ' ').trim() ?? ''
-      const anchors = [
-        ...root!.querySelectorAll<HTMLAnchorElement>('a[href]'),
-      ]
-      const internalAnchors = anchors.filter((anchor) => (
-        anchor.getAttribute('href')?.startsWith('/')
-      ))
-
-      expect(root).not.toBeNull()
-      expect(root?.children).toHaveLength(1)
-      expect(root?.querySelectorAll('main')).toHaveLength(1)
-      expect(main?.getAttribute('data-routeveil-static-shell')).toBe('')
-      expect(main?.hasAttribute('hidden')).toBe(false)
-      expect(main?.getAttribute('aria-hidden')).not.toBe('true')
-      expect(root?.querySelectorAll('h1')).toHaveLength(1)
-      expect(heading?.textContent).toBe(route.heading)
-      expect(text.length).toBeGreaterThan(160)
-      expect(text).toContain(route.staticSummary)
-      expect(root?.querySelector('noscript')).toBeNull()
-      expect(root?.querySelector('script')).toBeNull()
-      expect(internalAnchors.length).toBeGreaterThan(0)
-      expect(anchors.map((anchor) => ({
-        href: anchor.getAttribute('href'),
-        label: anchor.textContent?.trim(),
-      }))).toEqual(route.links)
-
-      for (const section of route.staticContent) {
-        expect(text).toContain(section.heading)
-        if (section.code) expect(text).toContain(section.code)
-        for (const paragraph of section.paragraphs) {
-          expect(text).toContain(paragraph)
-        }
-      }
-
-      for (const anchor of anchors) {
-        expect(anchor.textContent?.trim().length).toBeGreaterThan(0)
-      }
-    })
-  }
-
-  it('makes every indexable page crawlably reachable from the homepage', () => {
-    const pending = ['/']
-    const visited = new Set<string>()
-
-    while (pending.length > 0) {
-      const pathname = pending.shift()
-      if (!pathname || visited.has(pathname)) continue
-      visited.add(pathname)
-
-      const route = findSeoRoute(pathname)
-      if (!route) continue
-
-      for (const link of route.links) {
-        const linkedRoute = link.href.startsWith('/')
-          ? findSeoRoute(new URL(link.href, siteOrigin).pathname)
-          : undefined
-        if (linkedRoute?.indexable && !visited.has(linkedRoute.pathname)) {
-          pending.push(linkedRoute.pathname)
-        }
-      }
-    }
-
-    expect(
-      seoRouteRegistry
-        .filter((route) => route.indexable)
-        .map((route) => route.pathname)
-        .filter((pathname) => !visited.has(pathname)),
-    ).toEqual([])
-  })
-
-  it('resolves every internal route and fragment without JavaScript', () => {
-    const documents = new Map(
-      seoRouteRegistry.map((route) => [
-        route.pathname,
-        renderStaticDocument(route),
-      ]),
-    )
-
-    for (const route of seoRouteRegistry) {
-      for (const link of route.links) {
-        const url = new URL(link.href, `${siteOrigin}${route.pathname}`)
-        if (url.origin !== siteOrigin) continue
-
-        const targetRoute = findSeoRoute(url.pathname)
-        expect(targetRoute, link.href).toBeDefined()
-        expect(url.pathname, link.href).toBe(targetRoute?.pathname)
-
-        if (url.hash) {
-          const targetId = decodeURIComponent(url.hash.slice(1))
-          expect(
-            documents.get(targetRoute!.pathname)?.getElementById(targetId),
-            link.href,
-          ).not.toBeNull()
-        }
-      }
-    }
-  })
-})
-
 describe('SEO route registry and sitemap', () => {
+  it('keeps the requested public document titles', () => {
+    expect(Object.fromEntries(
+      seoRouteRegistry.map((route) => [route.pathname, route.title]),
+    )).toMatchObject({
+      '/': 'Routeveil – Transition Engine for React Router',
+      '/docs': 'Documentation – Routeveil',
+      '/lab': 'Laboratory – Routeveil',
+      '/lab/between': 'Between Rendering – Routeveil',
+      '/lab/shared-elements': 'Shared Elements – Routeveil',
+    })
+  })
+
   it('keeps route, output, canonical, title, and description values unique', () => {
     const indexableRoutes = seoRouteRegistry.filter((route) => route.indexable)
     const uniqueValues = (values: readonly (string | null)[]) => (

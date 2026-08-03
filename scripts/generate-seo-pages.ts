@@ -6,18 +6,14 @@ import {
 } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { JSDOM } from 'jsdom'
 import compatibility from '../src/app/data/compatibility.json'
-import { SeoStaticShell } from '../src/app/shared/SeoStaticShell'
 import {
   resolveDocumentMetadata,
   resolveStructuredData,
   structuredDataElementId,
 } from '../src/app/shared/lib/documentMetadata'
 import {
-  findSeoRoute,
   indexRobots,
   noindexRobots,
   renderSitemapXml,
@@ -241,55 +237,23 @@ function validateBreadcrumbs(
   )
 }
 
-function validateGeneratedHtmlWithoutJavaScript(
+function validateGeneratedClientEntry(
   document: Document,
   route: SeoRouteDefinition,
 ) {
   const root = document.getElementById('root')
   invariant(root, `${route.pathname} is missing the React root`)
-  invariant(root.children.length > 0, `${route.pathname} has an empty React root`)
   invariant(
-    root.querySelectorAll('main').length === 1,
-    `${route.pathname} needs one initial main`,
+    root.childNodes.length === 0,
+    `${route.pathname} must have an empty initial React root`,
   )
   invariant(
-    root.querySelectorAll('h1').length === 1,
-    `${route.pathname} needs one initial h1`,
-  )
-
-  const shell = root.querySelector<HTMLElement>('[data-routeveil-static-shell]')
-  invariant(shell, `${route.pathname} is missing its static shell`)
-  invariant(!shell.hidden, `${route.pathname} hides its static shell`)
-  invariant(
-    shell.getAttribute('aria-hidden') !== 'true',
-    `${route.pathname} hides its static shell from accessibility APIs`,
-  )
-
-  const text = root.textContent?.replace(/\s+/gu, ' ').trim() ?? ''
-  invariant(text.length > 160, `${route.pathname} has no meaningful initial copy`)
-  invariant(
-    text.includes(route.staticSummary),
-    `${route.pathname} is missing its route summary`,
+    !document.querySelector('[data-routeveil-static-shell]'),
+    `${route.pathname} contains the removed static shell`,
   )
   invariant(
-    root.querySelector('h1')?.textContent?.trim() === route.heading,
-    `${route.pathname} has the wrong initial heading`,
-  )
-
-  const internalLinks = [
-    ...root.querySelectorAll<HTMLAnchorElement>('a[href^="/"]'),
-  ]
-  invariant(
-    internalLinks.length > 0,
-    `${route.pathname} needs a crawlable internal link`,
-  )
-  invariant(
-    internalLinks.every((link) => Boolean(link.textContent?.trim())),
-    `${route.pathname} has a link without descriptive text`,
-  )
-  invariant(
-    document.querySelectorAll('noscript[data-routeveil-fallback]').length === 0,
-    `${route.pathname} still contains the obsolete noscript fallback`,
+    document.querySelectorAll('noscript').length === 0,
+    `${route.pathname} contains an alternate noscript page`,
   )
   invariant(
     Boolean(document.querySelector('script[type="module"][src]')),
@@ -487,74 +451,6 @@ function validateRouteRegistry() {
   }
 }
 
-function decodeFragment(hash: string): string {
-  try {
-    return decodeURIComponent(hash.slice(1))
-  } catch {
-    return hash.slice(1)
-  }
-}
-
-function validateInternalLinks(documents: Map<string, Document>) {
-  for (const [pathname, document] of documents) {
-    for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
-      '#root a[href]',
-    )) {
-      const href = anchor.getAttribute('href')
-      invariant(href, `${pathname} has an empty link`)
-      const url = new URL(href, `${siteOrigin}${pathname}`)
-      if (url.origin !== siteOrigin) continue
-
-      const targetRoute = findSeoRoute(url.pathname)
-      invariant(targetRoute, `${pathname} links to an unknown route: ${href}`)
-      invariant(
-        url.pathname === targetRoute.pathname,
-        `${pathname} links to a redirected route: ${href}`,
-      )
-
-      if (!url.hash) continue
-      const targetDocument = documents.get(targetRoute.pathname)
-      const targetId = decodeFragment(url.hash)
-      invariant(
-        targetDocument?.getElementById(targetId),
-        `${pathname} links to a missing fragment: ${href}`,
-      )
-    }
-  }
-}
-
-function validateHomepageReachability(documents: Map<string, Document>) {
-  const pending = ['/']
-  const visited = new Set<string>()
-
-  while (pending.length > 0) {
-    const pathname = pending.shift()
-    if (!pathname || visited.has(pathname)) continue
-    visited.add(pathname)
-    const document = documents.get(pathname)
-    if (!document) continue
-
-    for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
-      '#root a[href^="/"]',
-    )) {
-      const linkedPathname = new URL(anchor.href, siteOrigin).pathname
-      const route = seoRouteRegistry.find(
-        (candidate) => candidate.pathname === linkedPathname,
-      )
-      if (route?.indexable && !visited.has(route.pathname)) {
-        pending.push(route.pathname)
-      }
-    }
-  }
-
-  for (const route of seoRouteRegistry.filter((candidate) => candidate.indexable)) {
-    invariant(
-      visited.has(route.pathname),
-      `${route.pathname} is not crawlably reachable from the homepage`,
-    )
-  }
-}
-
 async function validateVercelConfiguration() {
   const configuration = JSON.parse(
     await readFile(resolve(process.cwd(), 'vercel.json'), 'utf8'),
@@ -731,8 +627,9 @@ for (const route of seoRouteRegistry) {
   const root = document.getElementById('root')
 
   invariant(root, `${route.pathname} is missing the React root`)
-  root.innerHTML = renderToStaticMarkup(
-    createElement(SeoStaticShell, { route }),
+  invariant(
+    root.childNodes.length === 0,
+    `${route.pathname} build template must have an empty React root`,
   )
   applyMetadata(document, route)
 
@@ -758,7 +655,6 @@ invariant(
 
 const sitemap = await readFile(resolve(buildRoot, 'sitemap.xml'), 'utf8')
 const sitemapUrls = validateSitemap(sitemap)
-const documents = new Map<string, Document>()
 
 for (const route of seoRouteRegistry) {
   const outputPath = resolve(buildRoot, route.file)
@@ -766,16 +662,13 @@ for (const route of seoRouteRegistry) {
   const output = await readFile(outputPath, 'utf8')
   const document = new JSDOM(output).window.document
 
-  validateGeneratedHtmlWithoutJavaScript(document, route)
+  validateGeneratedClientEntry(document, route)
   validateMetadata(document, route, sitemapUrls)
   const structuredData = parseStructuredData(document, route)
   validateBreadcrumbs(route, structuredData)
   await validateAssets(document, route)
-  documents.set(route.pathname, document)
 }
 
-validateInternalLinks(documents)
-validateHomepageReachability(documents)
 await validateVercelConfiguration()
 
 const robots = await readFile(resolve(buildRoot, 'robots.txt'), 'utf8')
@@ -785,5 +678,5 @@ validateRobots(robots)
 validateAiReferences(llms, llmsFull)
 
 process.stdout.write(
-  'SEO pages verified with meaningful static roots, canonical sitemap entries, crawlable links, structured data, and redirect safeguards.\n',
+  'SEO pages verified with empty client roots, route metadata, canonical sitemap entries, structured data, and redirect safeguards.\n',
 )

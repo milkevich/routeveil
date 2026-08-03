@@ -3,7 +3,6 @@
 @import "./app/styles/global.css";
 @import "./app/styles/layout.css";
 @import "./app/styles/shared.css";
-@import "./app/styles/seo-static.css";
 
 img {
     -webkit-user-drag: none;
