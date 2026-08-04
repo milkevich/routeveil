@@ -62,8 +62,9 @@
 }
 
 .code-block__copy:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: -4px;
+  outline: 2px solid var(--muted);
+  outline-offset: -12px;
+  border-radius: 20px;
 }
 
 .code-block__copy svg {
@@ -118,8 +119,9 @@
 }
 
 .code-block pre:focus-visible {
-  outline-color: #fff;
+  outline-color: var(--muted);
   outline-offset: -6px;
+  border-radius: 20px;
 }
 
 @media (prefers-reduced-motion: reduce) {

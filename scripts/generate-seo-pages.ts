@@ -8,6 +8,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { JSDOM } from 'jsdom'
 import compatibility from '../src/app/data/compatibility.json'
+import { releases } from '../src/app/data/releases'
 import {
   resolveDocumentMetadata,
   resolveStructuredData,
@@ -617,6 +618,39 @@ function validateAiReferences(llms: string, llmsFull: string) {
       && llmsFull.includes('data-routeveil-phase="between"'),
     'AI-readable references are missing between rendering',
   )
+
+  invariant(
+    llms.includes('https://www.routeveil.dev/releases')
+      && llmsFull.includes('- Releases: https://www.routeveil.dev/releases'),
+    'AI-readable references are missing the releases page',
+  )
+
+  const releaseHistoryStart = llmsFull.indexOf('## Release history')
+  const releaseHistoryEnd = llmsFull.indexOf(
+    '\n## ',
+    releaseHistoryStart + 1,
+  )
+  const releaseHistory = llmsFull.slice(
+    releaseHistoryStart,
+    releaseHistoryEnd < 0 ? undefined : releaseHistoryEnd,
+  )
+  let previousReleaseIndex = -1
+
+  invariant(
+    releaseHistoryStart >= 0,
+    'AI-readable references are missing the release history section',
+  )
+
+  for (const release of releases) {
+    const summary = `- \`${release.version}\` (${release.date}) — ${release.title}: ${release.description}`
+    const releaseIndex = releaseHistory.indexOf(summary)
+
+    invariant(
+      releaseIndex > previousReleaseIndex,
+      `AI-readable release history is missing or misorders ${release.version}`,
+    )
+    previousReleaseIndex = releaseIndex
+  }
 }
 
 validateRouteRegistry()

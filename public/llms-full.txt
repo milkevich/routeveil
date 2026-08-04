@@ -14,6 +14,7 @@ Canonical sources:
 
 - Website: https://www.routeveil.dev/
 - Documentation: https://www.routeveil.dev/docs
+- Releases: https://www.routeveil.dev/releases
 - Interactive transition lab: https://www.routeveil.dev/lab
 - Between-render lab: https://www.routeveil.dev/lab/between
 - Shared-elements playground: https://www.routeveil.dev/lab/shared-elements
@@ -23,6 +24,20 @@ Canonical sources:
 The package name is `routeveil`. Import runtime APIs from
 `routeveil/react-router`. The package root is not a runtime entry point. Routeveil is
 licensed under the MIT License.
+
+## Release history
+
+- `0.4.0` (2026-08-02) — Between Rendering: Routeveil can now render controlled React content between route exit and entry, with readiness holds, minimum timing, and same-page playback.
+- `0.3.1` (2026-07-31) — Transition Request Guard: Rapid repeated activations now reuse the active transition instead of restarting visual work or committing duplicate navigation.
+- `0.3.0` (2026-07-31) — Unified Transition API: A redesigned transition input unifies names, options, and independent page phases under one fully typed API.
+- `0.2.5` (2026-07-28) — Provider Lifecycle Refinements: Provider internals, shared-element coordination, and transition cleanup were refined for more efficient and dependable navigation.
+- `0.2.4` (2026-07-27) — Snapshot Pipeline: A new viewport snapshot pipeline made page transitions more visually stable while improving shared elements, preloading, and mobile performance.
+- `0.2.3` (2026-07-26) — Shared Element Matching: Shared movement now begins only when Routeveil confirms that a valid matching element exists on the destination route.
+- `0.2.2` (2026-07-25) — Route-wide Shared Elements: Shared-element navigation can now be triggered by controls outside the element being moved.
+- `0.2.1` (2026-07-25) — Preloading and Route Readiness: Routes and their visual dependencies can now be prepared before reveal, reducing delays between navigation and the incoming transition.
+- `0.2.0` (2026-07-25) — Shared Element Transitions: Routeveil gained coordinated visual movement between matching elements on outgoing and incoming React Router routes.
+- `0.1.1` (2026-07-22) — Production Readiness: This release strengthened Routeveil’s package output, documentation, metadata, deployment setup, and browser behavior after the initial launch.
+- `0.1.0` (2026-07-21) — Core Transition Engine: Routeveil’s first public build established its typed page and full-screen overlay transition engine for React Router.
 
 ## Installation and compatibility
 

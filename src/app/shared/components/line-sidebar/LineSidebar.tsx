@@ -11,6 +11,7 @@ type Falloff = 'linear' | 'smooth' | 'sharp'
 export interface LineSidebarProps {
   items: string[]
   hrefs?: readonly string[]
+  ariaLabel?: string
   accentColor?: string
   textColor?: string
   markerColor?: string
@@ -41,6 +42,7 @@ const falloffCurves: Record<Falloff, (progress: number) => number> = {
 export default function LineSidebar({
   items,
   hrefs,
+  ariaLabel = 'Documentation sections',
   accentColor = '#000000',
   textColor = '#6f6f6f',
   markerColor = '#a8a8a8',
@@ -103,7 +105,7 @@ export default function LineSidebar({
 
   return (
     <nav
-      aria-label="Documentation sections"
+      aria-label={ariaLabel}
       className={[
         'line-sidebar',
         showMarker && 'line-sidebar--markers',

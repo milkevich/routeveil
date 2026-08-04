@@ -168,7 +168,7 @@ export function PixelHeadingWord({
         onKeyDown={handleKeyDown}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        tabIndex={0}
+        tabIndex={-1}
       >
         {children}
       </Tag>

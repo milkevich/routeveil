@@ -58,13 +58,75 @@ describe('demo primary navigation', () => {
   })
 
   it('derives directions from the centralized route order', () => {
-    expect(primaryNavigation.map((route) => route.path)).toEqual(['/', '/docs', '/lab'])
+    expect(primaryNavigation).toEqual([
+      { label: 'Home', path: '/' },
+      { label: 'Docs', path: '/docs' },
+      { label: 'Releases', path: '/releases' },
+      { label: 'Lab', path: '/lab' },
+    ])
     expect(routeDirection('/', '/docs')).toBe('left')
     expect(routeDirection('/', '/lab')).toBe('left')
+    expect(routeDirection('/docs', '/releases')).toBe('left')
+    expect(routeDirection('/releases', '/lab')).toBe('left')
     expect(routeDirection('/docs', '/lab')).toBe('left')
     expect(routeDirection('/lab', '/docs')).toBe('right')
+    expect(routeDirection('/lab', '/releases')).toBe('right')
+    expect(routeDirection('/releases', '/docs')).toBe('right')
     expect(routeDirection('/docs/reference', '/')).toBe('right')
+    expect(resolvePrimaryPath('/releases')).toBe('/releases')
+    expect(resolvePrimaryPath('/releases/archive')).toBe('/releases')
+    expect(resolvePrimaryPath('/releases#v0-4-0')).toBe('/releases')
     expect(resolvePrimaryPath('/lab/preview/b')).toBe('/lab')
+  })
+
+  it('renders Releases as the active desktop and mobile destination', () => {
+    const view = render(
+      <MemoryRouter initialEntries={['/releases#v0-4-0']}>
+        <RouteveilProvider>
+          <Header />
+        </RouteveilProvider>
+      </MemoryRouter>,
+    )
+    const desktopLinks = [
+      ...view.container.querySelectorAll<HTMLAnchorElement>(
+        '.primary-nav__link',
+      ),
+    ]
+    const mobileLinks = [
+      ...view.container.querySelectorAll<HTMLAnchorElement>(
+        '.mobile-nav > a',
+      ),
+    ]
+
+    expect(desktopLinks.map((link) => link.textContent)).toEqual([
+      'Home',
+      'Docs',
+      'Releases',
+      'Lab',
+    ])
+    expect(mobileLinks.map((link) => link.textContent)).toEqual([
+      '01Home',
+      '02Docs',
+      '03Releases',
+      '04Lab',
+    ])
+
+    const releasesLinks = [
+      ...view.container.querySelectorAll<HTMLAnchorElement>(
+        'a[href="/releases"]',
+      ),
+    ]
+
+    expect(releasesLinks).toHaveLength(2)
+    expect(releasesLinks.every((link) => (
+      link.getAttribute('aria-current') === 'page'
+    ))).toBe(true)
+    expect(desktopLinks.map((link) => link.dataset.direction)).toEqual([
+      'right',
+      'right',
+      'left',
+      'left',
+    ])
   })
 
   it('restores the active indicator on a direct docs render and updates its measurement', () => {

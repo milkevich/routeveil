@@ -19,14 +19,17 @@ export function DocSection({
     <section className="doc-section" id={id}>
       <div className="doc-section__heading">
         <span>{index}</span>
-        <PixelHeadingWord onClick={() => {
-          window.location.replace(`#${id}`)
-        }} style={{
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "start"
-        }} as="h2" initialFont="square" hoverFont="square">
-          {title}
+        <PixelHeadingWord
+          as="h2"
+          hoverFont="square"
+          initialFont="square"
+        >
+          <a
+            className="doc-section__title-link"
+            href={`/docs#${id}`}
+          >
+            {title}
+          </a>
         </PixelHeadingWord>
         {intro && <p>{intro}</p>}
       </div>

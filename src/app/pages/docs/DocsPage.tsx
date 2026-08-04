@@ -23,6 +23,7 @@ export function DocsPage() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
+  const initialHashHandledRef = useRef(false)
   const mobileScrollRef = useRef<HTMLDivElement | null>(null)
   const mobileItemRefs = useRef<Array<HTMLAnchorElement | null>>([])
 
@@ -123,6 +124,8 @@ export function DocsPage() {
   }, [])
 
   useLayoutEffect(() => {
+    if (initialHashHandledRef.current) return
+    initialHashHandledRef.current = true
     if (!location.hash) return
 
     const id = decodeURIComponent(location.hash.slice(1))

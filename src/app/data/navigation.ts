@@ -1,14 +1,27 @@
 export const primaryNavigation = [
   { label: 'Home', path: '/' },
   { label: 'Docs', path: '/docs' },
+  { label: 'Releases', path: '/releases' },
   { label: 'Lab', path: '/lab' },
 ] as const
 
 export type PrimaryPath = (typeof primaryNavigation)[number]['path']
 
 export function resolvePrimaryPath(pathname: string): PrimaryPath {
-  if (pathname === '/docs' || pathname.startsWith('/docs/')) return '/docs'
-  if (pathname === '/lab' || pathname.startsWith('/lab/')) return '/lab'
+  const normalizedPathname = pathname.split(/[?#]/u, 1)[0] ?? pathname
+
+  if (
+    normalizedPathname === '/docs'
+    || normalizedPathname.startsWith('/docs/')
+  ) return '/docs'
+  if (
+    normalizedPathname === '/releases'
+    || normalizedPathname.startsWith('/releases/')
+  ) return '/releases'
+  if (
+    normalizedPathname === '/lab'
+    || normalizedPathname.startsWith('/lab/')
+  ) return '/lab'
   return '/'
 }
 

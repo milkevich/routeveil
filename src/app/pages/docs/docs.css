@@ -315,6 +315,18 @@
   line-height: 0.86;
 }
 
+.doc-section__title-link {
+  display: block;
+  width: fit-content;
+  color: inherit;
+  cursor: pointer;
+}
+
+.doc-section__title-link:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 0.15em;
+}
+
 .doc-section__heading>p {
   max-width: 760px;
   color: var(--muted);

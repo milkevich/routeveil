@@ -6,6 +6,7 @@
 
 - [Website](https://www.routeveil.dev/): Project overview.
 - [Documentation](https://www.routeveil.dev/docs): Installation, quick start, API, transitions, options, and reduced-motion behavior.
+- [Releases](https://www.routeveil.dev/releases): Complete version history, API changes, new capabilities, fixes, and migration examples.
 - [Interactive laboratory](https://www.routeveil.dev/lab): Built-in page and overlay transition demonstrations.
 - [Between-render laboratory](https://www.routeveil.dev/lab/between): Same-page page and overlay transition previews with controlled between content and minimum timing.
 - [Shared elements playground](https://www.routeveil.dev/lab/shared-elements): Image transitions between real gallery and detail routes.

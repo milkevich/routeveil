@@ -236,7 +236,7 @@ export function PixelHeadingCharacter({
         onBlur={handleBlur}
         onFocus={handleFocus}
         onKeyDown={handleKeyDown}
-        tabIndex={0}
+        tabIndex={-1}
       >
         {prefix && (
           <>

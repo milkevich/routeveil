@@ -62,6 +62,22 @@ export const seoRouteRegistry = [
     ],
   },
   {
+    pathname: '/releases',
+    file: 'releases.html',
+    title: 'Releases – Routeveil',
+    description:
+      'Explore every Routeveil release, including new capabilities, API changes, fixes, and performance improvements.',
+    canonicalUrl: canonicalUrl('/releases'),
+    indexable: true,
+    includeInSitemap: true,
+    openGraphType: 'website',
+    structuredDataType: 'website',
+    breadcrumb: [
+      { name: 'Routeveil', pathname: '/' },
+      { name: 'Releases', pathname: '/releases' },
+    ],
+  },
+  {
     pathname: '/lab',
     file: 'lab.html',
     title: 'Laboratory – Routeveil',

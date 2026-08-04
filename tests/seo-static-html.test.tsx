@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { getReleaseId, releases } from '../src/app/data/releases'
 import {
   resolveDocumentMetadata,
   resolveStructuredData,
@@ -40,6 +41,7 @@ describe('SEO route registry and sitemap', () => {
     )).toMatchObject({
       '/': 'Routeveil – Transition Engine for React Router',
       '/docs': 'Documentation – Routeveil',
+      '/releases': 'Releases – Routeveil',
       '/lab': 'Laboratory – Routeveil',
       '/lab/between': 'Between Rendering – Routeveil',
       '/lab/shared-elements': 'Shared Elements – Routeveil',
@@ -118,6 +120,28 @@ describe('SEO route registry and sitemap', () => {
     )
     expect(xmlDocument.querySelector('parsererror')).toBeNull()
     expect(xmlDocument.documentElement.textContent).toBe(unsafe)
+  })
+
+  it('keeps Releases indexable at one hash-free canonical URL', () => {
+    const route = resolveSeoRoute('/releases')
+    const sitemap = renderSitemapXml()
+
+    expect(route).toMatchObject({
+      breadcrumb: [
+        { name: 'Routeveil', pathname: '/' },
+        { name: 'Releases', pathname: '/releases' },
+      ],
+      canonicalUrl: `${siteOrigin}/releases`,
+      file: 'releases.html',
+      includeInSitemap: true,
+      indexable: true,
+      structuredDataType: 'website',
+      title: 'Releases – Routeveil',
+    })
+    expect(sitemap.match(
+      /<loc>https:\/\/www\.routeveil\.dev\/releases<\/loc>/gu,
+    )).toHaveLength(1)
+    expect(sitemap).not.toContain('/releases#')
   })
 })
 
@@ -251,5 +275,39 @@ describe('route metadata and structured data', () => {
     expect(resolveDocumentMetadata(detail.pathname).robots).toBe(noindexRobots)
     expect(resolveStructuredData(detail.pathname)).toBeNull()
     expect(sitemap).not.toContain(detail.canonicalUrl)
+  })
+
+  it('resolves hash-specific release metadata without changing canonical URLs', () => {
+    const route = resolveSeoRoute('/releases')
+
+    for (const release of releases) {
+      const hash = `#${getReleaseId(release.version)}`
+      const metadata = resolveDocumentMetadata('/releases', hash)
+      const structuredData = resolveStructuredData('/releases', hash)
+      const graph = structuredData?.['@graph'] as StructuredDataNode[]
+      const page = graph.find((node) => (
+        node['@id'] === `${route.canonicalUrl}#webpage`
+      ))
+
+      expect(metadata).toEqual({
+        canonicalUrl: `${siteOrigin}/releases`,
+        description: release.description,
+        openGraphType: 'website',
+        robots: indexRobots,
+        title: `Routeveil v${release.version} – ${release.title}`,
+      })
+      expect(page).toMatchObject({
+        '@type': 'WebPage',
+        description: release.description,
+        name: `Routeveil v${release.version} – ${release.title}`,
+        url: `${siteOrigin}/releases`,
+      })
+      expect(nodeTypes(page!)).toEqual(['WebPage'])
+    }
+
+    expect(resolveDocumentMetadata('/releases', '#not-a-release'))
+      .toEqual(resolveDocumentMetadata('/releases'))
+    expect(resolveDocumentMetadata('/releases', '#%'))
+      .toEqual(resolveDocumentMetadata('/releases'))
   })
 })

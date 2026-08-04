@@ -1,4 +1,5 @@
 import compatibility from '../../data/compatibility.json'
+import { getReleaseId, releases } from '../../data/releases'
 import {
   docsSections,
   type DocsSectionId,
@@ -94,6 +95,17 @@ const docsSectionMetadata = new Map<string, RouteMetadata>(
     },
   ]),
 )
+const releasesMetadata = metadataFromRoute(resolveSeoRoute('/releases'))
+const releaseMetadata = new Map<string, RouteMetadata>(
+  releases.map((release) => [
+    getReleaseId(release.version),
+    {
+      ...releasesMetadata,
+      title: `Routeveil v${release.version} – ${release.title}`,
+      description: release.description,
+    },
+  ]),
+)
 
 function decodeHash(hash: string): string {
   const value = hash.startsWith('#') ? hash.slice(1) : hash
@@ -113,6 +125,11 @@ export function resolveDocumentMetadata(
 
   if (route.pathname === '/docs') {
     return docsSectionMetadata.get(decodeHash(hash))
+      ?? metadataFromRoute(route)
+  }
+
+  if (route.pathname === '/releases') {
+    return releaseMetadata.get(decodeHash(hash))
       ?? metadataFromRoute(route)
   }
 

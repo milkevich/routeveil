@@ -103,5 +103,12 @@ describe('documentation structure', () => {
     ))).toEqual(
       docsSections.map((_, index) => String(index + 1).padStart(2, '0')),
     )
+    expect(sections.map((section) => (
+      section.querySelector<HTMLAnchorElement>(
+        '.doc-section__heading h2 > a',
+      )?.getAttribute('href')
+    ))).toEqual(
+      docsSections.map(({ id }) => `/docs#${id}`),
+    )
   })
 })
