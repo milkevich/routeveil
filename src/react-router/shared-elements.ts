@@ -1,4 +1,5 @@
 import { cancelAnimations } from '../core/index.js'
+import type { AnimationPhaseDefinition } from '../core/index.js'
 import type { SharedElementsOption } from './types.js'
 
 export type SharedElementRegistrationToken = symbol
@@ -182,6 +183,13 @@ type StyleMorphEntry = {
   target: Partial<StyleMorphSnapshot>
 }
 
+type StackingLevel = {
+  zIndex: number
+  order: number
+}
+
+type StackingPath = readonly StackingLevel[]
+
 type SourceEntry = {
   registration: SharedElementRegistration
   rect: SharedRect
@@ -189,6 +197,7 @@ type SourceEntry = {
   handoffRect: SharedRect | null
   borderRadius: string
   frameStyle: FrameStyle
+  stackingPath: StackingPath
   visualOpacity: number
   visualIdentity: string
   wrapper: HTMLElement
@@ -206,10 +215,43 @@ type TargetEntry = {
   documentRect: SharedRect
   borderRadius: string
   frameStyle: FrameStyle
+  stackingPath: StackingPath
   styleMorphs: StyleMorphEntry[]
   visualOpacity: number
   opacity: StyleOwnership
   clone: Element | null
+}
+
+type OccludingSurface = {
+  element: HTMLElement
+}
+
+type OccluderGeometry = {
+  element: Element
+  rect: SharedRect
+  stackingPath: StackingPath
+}
+
+type InlineStyleSnapshot = {
+  element: HTMLElement | SVGElement
+  value: string | null
+}
+
+type PromotedTargetCandidate = {
+  element: HTMLElement | SVGElement
+  documentRect: SharedRect
+  rect: SharedRect
+  stackingPath: StackingPath
+  order: number
+}
+
+type PromotedTargetLayer = PromotedTargetCandidate & {
+  placeholder: HTMLElement
+  originalParent: Node
+  originalNextSibling: ChildNode | null
+  styleSnapshots: InlineStyleSnapshot[]
+  wrapper: HTMLElement
+  animations: Set<Animation>
 }
 
 type SharedMovement = {
@@ -2452,6 +2494,7 @@ function createViewSnapshotWrapper(
   wrapper.style.setProperty('margin', '0', 'important')
   wrapper.style.setProperty('border', '0', 'important')
   wrapper.style.setProperty('background', 'transparent', 'important')
+  wrapper.style.setProperty('z-index', '0', 'important')
   wrapper.style.setProperty('opacity', '0.001')
   wrapper.style.setProperty('visibility', 'visible', 'important')
   wrapper.style.setProperty('filter', 'none')
@@ -2490,6 +2533,7 @@ function createWrapper(
   wrapper.style.setProperty('margin', '0', 'important')
   wrapper.style.setProperty('border', '0', 'important')
   wrapper.style.setProperty('background', 'transparent', 'important')
+  wrapper.style.setProperty('z-index', '1', 'important')
   wrapper.style.setProperty('opacity', '0.001', 'important')
   wrapper.style.setProperty('visibility', 'visible', 'important')
   wrapper.style.setProperty('filter', 'none', 'important')
@@ -2505,6 +2549,863 @@ function createWrapper(
     'important',
   )
   return wrapper
+}
+
+function createOccludingSurfaceElement(
+  document: Document,
+  rect: SharedRect,
+  phase: 'source' | 'target',
+): HTMLElement {
+  const surface = document.createElement('routeveil-shared-occluders')
+  surface.setAttribute('data-routeveil-shared-occluders', phase)
+  surface.setAttribute('aria-hidden', 'true')
+  surface.inert = true
+  surface.style.setProperty('all', 'initial')
+  surface.style.setProperty('display', 'block', 'important')
+  surface.style.setProperty('position', 'fixed', 'important')
+  surface.style.setProperty('inset', 'auto', 'important')
+  surface.style.setProperty('left', `${String(rect.left)}px`, 'important')
+  surface.style.setProperty('top', `${String(rect.top)}px`, 'important')
+  surface.style.setProperty('right', 'auto', 'important')
+  surface.style.setProperty('bottom', 'auto', 'important')
+  surface.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  surface.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  surface.style.setProperty('box-sizing', 'border-box', 'important')
+  surface.style.setProperty('padding', '0', 'important')
+  surface.style.setProperty('margin', '0', 'important')
+  surface.style.setProperty('border', '0', 'important')
+  surface.style.setProperty('background', 'transparent', 'important')
+  surface.style.setProperty('z-index', '2', 'important')
+  surface.style.setProperty('opacity', '0')
+  surface.style.setProperty('visibility', 'visible', 'important')
+  surface.style.setProperty('filter', 'none')
+  surface.style.setProperty('transform', 'none')
+  surface.style.setProperty('overflow', 'visible', 'important')
+  surface.style.setProperty('pointer-events', 'none', 'important')
+  surface.style.setProperty('transform-origin', 'top left', 'important')
+  surface.style.setProperty(
+    'will-change',
+    phase === 'source' ? 'opacity, transform, filter' : 'opacity',
+    'important',
+  )
+  return surface
+}
+
+function createOccludingLayerWrapper(
+  document: Document,
+  rect: SharedRect,
+  surfaceRect: SharedRect,
+  overflow: string,
+): HTMLElement {
+  const wrapper = document.createElement('routeveil-shared-occluder')
+  wrapper.setAttribute('data-routeveil-shared-occluder', '')
+  wrapper.setAttribute('aria-hidden', 'true')
+  wrapper.inert = true
+  wrapper.style.setProperty('all', 'initial')
+  wrapper.style.setProperty('display', 'block', 'important')
+  wrapper.style.setProperty('position', 'absolute', 'important')
+  wrapper.style.setProperty('inset', 'auto', 'important')
+  wrapper.style.setProperty(
+    'left',
+    `${String(rect.left - surfaceRect.left)}px`,
+    'important',
+  )
+  wrapper.style.setProperty(
+    'top',
+    `${String(rect.top - surfaceRect.top)}px`,
+    'important',
+  )
+  wrapper.style.setProperty('right', 'auto', 'important')
+  wrapper.style.setProperty('bottom', 'auto', 'important')
+  wrapper.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  wrapper.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  wrapper.style.setProperty('box-sizing', 'border-box', 'important')
+  wrapper.style.setProperty('padding', '0', 'important')
+  wrapper.style.setProperty('margin', '0', 'important')
+  wrapper.style.setProperty('border', '0', 'important')
+  wrapper.style.setProperty('background', 'transparent', 'important')
+  wrapper.style.setProperty('opacity', '1', 'important')
+  wrapper.style.setProperty('visibility', 'visible', 'important')
+  wrapper.style.setProperty('filter', 'none', 'important')
+  wrapper.style.setProperty('transform', 'none', 'important')
+  wrapper.style.setProperty('overflow', overflow, 'important')
+  wrapper.style.setProperty('pointer-events', 'none', 'important')
+  wrapper.style.setProperty('contain', 'layout style', 'important')
+  wrapper.style.setProperty('transform-origin', 'top left', 'important')
+  return wrapper
+}
+
+function parseStackingZIndex(style: CSSStyleDeclaration): number {
+  const parsed = Number.parseInt(style.zIndex, 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function createsStackingContext(
+  element: Element,
+  style: CSSStyleDeclaration,
+): boolean {
+  const position = style.position
+  const zIndex = style.zIndex.trim()
+  const parent = element.parentElement
+  const parentStyle = parent
+    ? element.ownerDocument.defaultView?.getComputedStyle(parent)
+    : null
+  const parentDisplay = parentStyle?.display || ''
+  const isFlexOrGridItem = (
+    parentDisplay.includes('flex')
+    || parentDisplay.includes('grid')
+  )
+
+  if (position === 'fixed' || position === 'sticky') {
+    return true
+  }
+
+  if (
+    zIndex !== ''
+    && zIndex !== 'auto'
+    && (
+      position === 'absolute'
+      || position === 'relative'
+      || isFlexOrGridItem
+    )
+  ) {
+    return true
+  }
+
+  const opacity = Number.parseFloat(style.opacity)
+  const contain = style.contain
+  const willChange = style.willChange
+  const backdropFilter = style.getPropertyValue('backdrop-filter')
+    || style.getPropertyValue('-webkit-backdrop-filter')
+  const mask = style.getPropertyValue('mask')
+    || style.getPropertyValue('-webkit-mask')
+  const maskImage = style.getPropertyValue('mask-image')
+    || style.getPropertyValue('-webkit-mask-image')
+  const containerType = style.getPropertyValue('container-type')
+  const hasEffect = (value: string) => value !== '' && value !== 'none'
+
+  return (
+    (Number.isFinite(opacity) && opacity < 1)
+    || (style.mixBlendMode !== '' && style.mixBlendMode !== 'normal')
+    || hasEffect(style.transform)
+    || hasEffect(style.filter)
+    || hasEffect(backdropFilter)
+    || hasEffect(style.perspective)
+    || hasEffect(style.clipPath)
+    || (mask !== '' && mask !== 'none')
+    || (maskImage !== '' && maskImage !== 'none')
+    || style.isolation === 'isolate'
+    || contain.split(/\s+/u).some((value) => (
+      value === 'layout'
+      || value === 'paint'
+      || value === 'strict'
+      || value === 'content'
+    ))
+    || willChange.split(/\s*,\s*/u).some((value) => (
+      value === 'opacity'
+      || value === 'transform'
+      || value === 'filter'
+      || value === 'perspective'
+      || value === 'clip-path'
+      || value === 'mask'
+      || value === 'mix-blend-mode'
+    ))
+    || (containerType !== '' && containerType !== 'normal')
+  )
+}
+
+function isIndependentStackingLayer(style: CSSStyleDeclaration): boolean {
+  const zIndex = style.zIndex.trim()
+
+  return (
+    style.position === 'fixed'
+    || style.position === 'sticky'
+    || (zIndex !== '' && zIndex !== 'auto')
+  )
+}
+
+function getElementOrderMap(view: HTMLElement): Map<Element, number> {
+  const order = new Map<Element, number>()
+  const elements = [view, ...view.querySelectorAll('*')]
+
+  for (let index = 0; index < elements.length; index += 1) {
+    order.set(elements[index]!, index)
+  }
+
+  return order
+}
+
+function getStackingPath(
+  element: Element,
+  boundary: Element,
+  order: ReadonlyMap<Element, number>,
+): StackingPath {
+  const ownerWindow = element.ownerDocument.defaultView
+
+  if (!ownerWindow) {
+    return []
+  }
+
+  const chain: Element[] = []
+  let current: Element | null = element
+
+  while (current && current !== boundary) {
+    chain.push(current)
+    current = current.parentElement
+  }
+
+  if (current !== boundary) {
+    return []
+  }
+
+  chain.reverse()
+  const path: StackingLevel[] = []
+
+  for (const candidate of chain) {
+    const style = ownerWindow.getComputedStyle(candidate)
+
+    if (candidate === element || createsStackingContext(candidate, style)) {
+      path.push({
+        zIndex: parseStackingZIndex(style),
+        order: order.get(candidate) ?? 0,
+      })
+    }
+  }
+
+  return path
+}
+
+function compareStackingPaths(
+  first: StackingPath,
+  second: StackingPath,
+): number {
+  const length = Math.max(first.length, second.length)
+
+  for (let index = 0; index < length; index += 1) {
+    const firstLevel = first[index]
+    const secondLevel = second[index]
+
+    if (!firstLevel || !secondLevel) {
+      return first.length - second.length
+    }
+
+    if (firstLevel.zIndex !== secondLevel.zIndex) {
+      return firstLevel.zIndex - secondLevel.zIndex
+    }
+
+    if (firstLevel.order !== secondLevel.order) {
+      return firstLevel.order - secondLevel.order
+    }
+  }
+
+  return 0
+}
+
+function getElementDepth(
+  element: Element,
+  boundary: Element,
+): number {
+  let depth = 0
+  let current: Element | null = element
+
+  while (current && current !== boundary) {
+    depth += 1
+    current = current.parentElement
+  }
+
+  return depth
+}
+
+function sampleIntersectionPoints(rect: SharedRect): Array<{
+  x: number
+  y: number
+}> {
+  const insetX = Math.min(2, rect.width / 4)
+  const insetY = Math.min(2, rect.height / 4)
+  const left = rect.left + insetX
+  const right = rect.left + rect.width - insetX
+  const top = rect.top + insetY
+  const bottom = rect.top + rect.height - insetY
+  const centerX = rect.left + rect.width / 2
+  const centerY = rect.top + rect.height / 2
+
+  return [
+    { x: centerX, y: centerY },
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: left, y: bottom },
+    { x: right, y: bottom },
+  ]
+}
+
+function getSubtreePaintIndex(
+  stack: readonly Element[],
+  root: Element,
+): number {
+  return stack.findIndex((element) => (
+    element === root || root.contains(element)
+  ))
+}
+
+function paintsAboveAtIntersection(
+  candidate: Element,
+  shared: Element,
+  intersection: SharedRect,
+): boolean {
+  const document = candidate.ownerDocument
+
+  if (typeof document.elementsFromPoint !== 'function') {
+    return false
+  }
+
+  for (const point of sampleIntersectionPoints(intersection)) {
+    let stack: Element[]
+
+    try {
+      stack = document.elementsFromPoint(point.x, point.y)
+    } catch {
+      continue
+    }
+
+    const candidateIndex = getSubtreePaintIndex(stack, candidate)
+    const sharedIndex = getSubtreePaintIndex(stack, shared)
+
+    if (
+      candidateIndex >= 0
+      && sharedIndex >= 0
+      && candidateIndex < sharedIndex
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function isRelatedToAnySharedElement(
+  element: Element,
+  sharedElements: readonly Element[],
+): boolean {
+  return sharedElements.some((shared) => (
+    element === shared
+    || element.contains(shared)
+    || shared.contains(element)
+  ))
+}
+
+function getOccluderRoot(
+  element: Element,
+  sharedElements: readonly Element[],
+  view: HTMLElement,
+): Element {
+  let current = element
+
+  while (current.parentElement && current.parentElement !== view) {
+    const parent = current.parentElement
+
+    if (
+      !view.contains(parent)
+      || sharedElements.some((shared) => parent.contains(shared))
+    ) {
+      break
+    }
+
+    current = parent
+  }
+
+  return current
+}
+
+function collectOccluderCandidates({
+  geometries,
+  movementRegions,
+  order,
+  view,
+}: {
+  geometries: readonly OccluderGeometry[]
+  movementRegions?: readonly SharedRect[]
+  order: ReadonlyMap<Element, number>
+  view: HTMLElement
+}): OccluderGeometry[] {
+  if (geometries.length === 0) {
+    return []
+  }
+
+  const ownerWindow = view.ownerDocument.defaultView
+
+  if (!ownerWindow) {
+    return []
+  }
+
+  const sharedElements = geometries.map((geometry) => geometry.element)
+  const capturedRegion = getCapturedVisualRect(view.ownerDocument)
+  const roots = new Map<Element, OccluderGeometry>()
+
+  for (const element of view.querySelectorAll('*')) {
+    if (
+      !isSupportedElement(element)
+      || isRelatedToAnySharedElement(element, sharedElements)
+    ) {
+      continue
+    }
+
+    let rect: SharedRect
+
+    try {
+      rect = copyRect(element.getBoundingClientRect())
+    } catch {
+      continue
+    }
+
+    if (!isVisuallyMeasurable(element, rect)) {
+      continue
+    }
+
+    if (
+      capturedRegion.status === 'valid'
+      && !intersectRects(rect, capturedRegion.rect)
+    ) {
+      continue
+    }
+
+    const directOccluder = geometries.some((geometry) => {
+      const intersection = intersectRects(rect, geometry.rect)
+      return Boolean(
+        intersection
+        && paintsAboveAtIntersection(
+          element,
+          geometry.element,
+          intersection,
+        )
+      )
+    })
+    const style = ownerWindow.getComputedStyle(element)
+    const intersectsMovement = !movementRegions || movementRegions.some(
+      (region) => intersectRects(rect, region) !== null,
+    )
+    const stackingPath = getStackingPath(element, view, order)
+    const independentOccluder = (
+      intersectsMovement
+      && isIndependentStackingLayer(style)
+      && createsStackingContext(element, style)
+      && geometries.some((geometry) => (
+        compareStackingPaths(stackingPath, geometry.stackingPath) > 0
+      ))
+    )
+
+    if (!directOccluder && !independentOccluder) {
+      continue
+    }
+
+    const root = getOccluderRoot(element, sharedElements, view)
+
+    if (
+      isRelatedToAnySharedElement(root, sharedElements)
+      || roots.has(root)
+    ) {
+      continue
+    }
+
+    let rootRect: SharedRect
+
+    try {
+      rootRect = copyRect(root.getBoundingClientRect())
+    } catch {
+      continue
+    }
+
+    if (!isVisuallyMeasurable(root, rootRect)) {
+      continue
+    }
+
+    roots.set(root, {
+      element: root,
+      rect: rootRect,
+      stackingPath: getStackingPath(root, view, order),
+    })
+  }
+
+  const candidates = [...roots.values()].sort((first, second) => (
+    getElementDepth(first.element, view)
+      - getElementDepth(second.element, view)
+    || (order.get(first.element) ?? 0) - (order.get(second.element) ?? 0)
+  ))
+  const selected: OccluderGeometry[] = []
+
+  for (const candidate of candidates) {
+    if (!selected.some((earlier) => (
+      earlier.element.contains(candidate.element)
+    ))) {
+      selected.push(candidate)
+    }
+  }
+
+  selected.sort((first, second) => (
+    compareStackingPaths(first.stackingPath, second.stackingPath)
+    || (order.get(first.element) ?? 0) - (order.get(second.element) ?? 0)
+  ))
+  return selected
+}
+
+function collectPromotedTargetCandidates({
+  geometries,
+  order,
+  view,
+}: {
+  geometries: readonly OccluderGeometry[]
+  order: ReadonlyMap<Element, number>
+  view: HTMLElement
+}): PromotedTargetCandidate[] {
+  if (geometries.length === 0) {
+    return []
+  }
+
+  const ownerWindow = view.ownerDocument.defaultView
+
+  if (!ownerWindow) {
+    return []
+  }
+
+  const sharedElements = geometries.map((geometry) => geometry.element)
+  const capturedRegion = getCapturedVisualRect(view.ownerDocument)
+  const candidates: PromotedTargetCandidate[] = []
+
+  for (const element of view.querySelectorAll('*')) {
+    if (
+      !isSupportedElement(element)
+      || isRelatedToAnySharedElement(element, sharedElements)
+    ) {
+      continue
+    }
+
+    const style = ownerWindow.getComputedStyle(element)
+
+    if (
+      !isIndependentStackingLayer(style)
+      || !createsStackingContext(element, style)
+    ) {
+      continue
+    }
+
+    const stackingPath = getStackingPath(element, view, order)
+
+    if (!geometries.some((geometry) => (
+      compareStackingPaths(stackingPath, geometry.stackingPath) > 0
+    ))) {
+      continue
+    }
+
+    let rect: SharedRect
+
+    try {
+      rect = copyRect(element.getBoundingClientRect())
+    } catch {
+      continue
+    }
+
+    if (!isVisuallyMeasurable(element, rect)) {
+      continue
+    }
+
+    if (
+      capturedRegion.status === 'valid'
+      && !intersectRects(rect, capturedRegion.rect)
+    ) {
+      continue
+    }
+
+    candidates.push({
+      element,
+      documentRect: toDocumentRect(element, rect),
+      rect,
+      stackingPath,
+      order: order.get(element) ?? 0,
+    })
+  }
+
+  candidates.sort((first, second) => (
+    getElementDepth(first.element, view)
+      - getElementDepth(second.element, view)
+    || first.order - second.order
+  ))
+
+  const selected: PromotedTargetCandidate[] = []
+
+  for (const candidate of candidates) {
+    if (!selected.some((earlier) => (
+      earlier.element.contains(candidate.element)
+    ))) {
+      selected.push(candidate)
+    }
+  }
+
+  selected.sort((first, second) => (
+    compareStackingPaths(first.stackingPath, second.stackingPath)
+    || first.order - second.order
+  ))
+  return selected
+}
+
+function captureAndFreezeInlineStyles(
+  root: HTMLElement | SVGElement,
+): InlineStyleSnapshot[] {
+  const elements = [root, ...root.querySelectorAll('*')]
+    .filter(isSupportedElement)
+  const frozen = elements.map((element) => {
+    const computed = element.ownerDocument.defaultView?.getComputedStyle(element)
+    const properties = computed
+      ? Array.from({ length: computed.length }, (_, index) => {
+          const property = computed.item(index)
+          return {
+            property,
+            value: computed.getPropertyValue(property),
+            priority: computed.getPropertyPriority(property),
+          }
+        })
+      : []
+
+    return {
+      element,
+      original: element.getAttribute('style'),
+      properties,
+    }
+  })
+
+  for (const entry of frozen) {
+    for (const { property, value, priority } of entry.properties) {
+      if (
+        property.startsWith('animation-')
+        || property === 'animation'
+        || property.startsWith('transition-')
+        || property === 'transition'
+      ) {
+        continue
+      }
+
+      entry.element.style.setProperty(property, value, priority)
+    }
+  }
+
+  return frozen.map(({ element, original }) => ({
+    element,
+    value: original,
+  }))
+}
+
+function restoreInlineStyles(
+  snapshots: readonly InlineStyleSnapshot[],
+): void {
+  for (const snapshot of snapshots) {
+    if (snapshot.value === null) {
+      snapshot.element.removeAttribute('style')
+    } else {
+      snapshot.element.setAttribute('style', snapshot.value)
+    }
+  }
+}
+
+function createPromotedTargetPlaceholder(
+  element: HTMLElement | SVGElement,
+  rect: SharedRect,
+): HTMLElement {
+  const document = element.ownerDocument
+  const placeholder = document.createElement('routeveil-shared-placeholder')
+  const style = document.defaultView?.getComputedStyle(element)
+
+  placeholder.setAttribute('data-routeveil-shared-placeholder', '')
+  placeholder.setAttribute('aria-hidden', 'true')
+  placeholder.inert = true
+  placeholder.style.setProperty('all', 'initial')
+  placeholder.style.setProperty('visibility', 'hidden', 'important')
+  placeholder.style.setProperty('pointer-events', 'none', 'important')
+
+  if (!style) {
+    placeholder.style.setProperty('display', 'block', 'important')
+    placeholder.style.setProperty('width', `${String(rect.width)}px`, 'important')
+    placeholder.style.setProperty('height', `${String(rect.height)}px`, 'important')
+    return placeholder
+  }
+
+  // Absolutely/fixed positioned elements do not reserve layout space. The
+  // placeholder only acts as a stable DOM restoration marker for them.
+  if (style.position === 'absolute' || style.position === 'fixed') {
+    placeholder.style.setProperty('display', 'none', 'important')
+    return placeholder
+  }
+
+  const display = style.display === 'inline' ? 'inline-block' : style.display
+
+  placeholder.style.setProperty('display', display || 'block', 'important')
+  placeholder.style.setProperty('box-sizing', 'border-box', 'important')
+  placeholder.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  placeholder.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  placeholder.style.setProperty('min-width', `${String(rect.width)}px`, 'important')
+  placeholder.style.setProperty('min-height', `${String(rect.height)}px`, 'important')
+  placeholder.style.setProperty('max-width', `${String(rect.width)}px`, 'important')
+  placeholder.style.setProperty('max-height', `${String(rect.height)}px`, 'important')
+  placeholder.style.setProperty('margin-top', style.marginTop, 'important')
+  placeholder.style.setProperty('margin-right', style.marginRight, 'important')
+  placeholder.style.setProperty('margin-bottom', style.marginBottom, 'important')
+  placeholder.style.setProperty('margin-left', style.marginLeft, 'important')
+  placeholder.style.setProperty('vertical-align', style.verticalAlign, 'important')
+  placeholder.style.setProperty('float', style.cssFloat, 'important')
+  placeholder.style.setProperty('clear', style.clear, 'important')
+
+  // Preserve flex/grid item participation so removing the real element does
+  // not reflow siblings while it is temporarily promoted above the portal.
+  placeholder.style.setProperty('flex-grow', style.flexGrow, 'important')
+  placeholder.style.setProperty('flex-shrink', style.flexShrink, 'important')
+  placeholder.style.setProperty('flex-basis', style.flexBasis, 'important')
+  placeholder.style.setProperty('order', style.order, 'important')
+  placeholder.style.setProperty('align-self', style.alignSelf, 'important')
+  placeholder.style.setProperty('justify-self', style.justifySelf, 'important')
+  placeholder.style.setProperty('grid-area', style.gridArea, 'important')
+  placeholder.style.setProperty('grid-row-start', style.gridRowStart, 'important')
+  placeholder.style.setProperty('grid-row-end', style.gridRowEnd, 'important')
+  placeholder.style.setProperty('grid-column-start', style.gridColumnStart, 'important')
+  placeholder.style.setProperty('grid-column-end', style.gridColumnEnd, 'important')
+
+  // Inline-level boxes derive their line-box contribution from a baseline.
+  // An empty custom placeholder gets a synthesized baseline that can differ
+  // from the real element's content baseline (notably inline-grid/flex
+  // controls). That changes the following block's Y position by a few pixels
+  // while the real element is promoted, which makes the shared target and the
+  // promoted element snap together when the real node is restored. Keep a
+  // non-visual full-size baseline participant so the placeholder contributes
+  // the same bottom-edge baseline as the occupied inline box without cloning
+  // any user content.
+  if (display.startsWith('inline')) {
+    const baseline = document.createElement('routeveil-shared-placeholder-baseline')
+    baseline.setAttribute('aria-hidden', 'true')
+    baseline.inert = true
+    baseline.style.setProperty('all', 'initial')
+    baseline.style.setProperty('display', 'block', 'important')
+    baseline.style.setProperty('width', '100%', 'important')
+    baseline.style.setProperty('height', '100%', 'important')
+    baseline.style.setProperty('min-width', '0', 'important')
+    baseline.style.setProperty('min-height', '0', 'important')
+    baseline.style.setProperty('margin', '0', 'important')
+    baseline.style.setProperty('padding', '0', 'important')
+    baseline.style.setProperty('border', '0', 'important')
+    baseline.style.setProperty('pointer-events', 'none', 'important')
+    placeholder.append(baseline)
+  }
+
+  return placeholder
+}
+
+function createPromotedTargetWrapper(
+  document: Document,
+  rect: SharedRect,
+  rootOrigin: { left: number; top: number },
+  transformOrigin: { x: number; y: number },
+): HTMLElement {
+  const wrapper = document.createElement('routeveil-shared-promoted-target')
+  wrapper.setAttribute('data-routeveil-shared-promoted-target', '')
+  wrapper.setAttribute('aria-hidden', 'true')
+  wrapper.inert = true
+  wrapper.style.setProperty('all', 'initial')
+  wrapper.style.setProperty('display', 'block', 'important')
+  wrapper.style.setProperty('position', 'absolute', 'important')
+  wrapper.style.setProperty('inset', 'auto', 'important')
+  wrapper.style.setProperty(
+    'left',
+    `${String(rect.left - rootOrigin.left)}px`,
+    'important',
+  )
+  wrapper.style.setProperty(
+    'top',
+    `${String(rect.top - rootOrigin.top)}px`,
+    'important',
+  )
+  wrapper.style.setProperty('right', 'auto', 'important')
+  wrapper.style.setProperty('bottom', 'auto', 'important')
+  wrapper.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  wrapper.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  wrapper.style.setProperty('box-sizing', 'border-box', 'important')
+  wrapper.style.setProperty('padding', '0', 'important')
+  wrapper.style.setProperty('margin', '0', 'important')
+  wrapper.style.setProperty('border', '0', 'important')
+  wrapper.style.setProperty('background', 'transparent', 'important')
+  // These are animated by WAAPI during enter, so they cannot be !important.
+  wrapper.style.setProperty('opacity', '1')
+  wrapper.style.setProperty('visibility', 'visible', 'important')
+  wrapper.style.setProperty('filter', 'none')
+  wrapper.style.setProperty('transform', 'none')
+  wrapper.style.setProperty('overflow', 'visible', 'important')
+  wrapper.style.setProperty('pointer-events', 'none', 'important')
+  wrapper.style.setProperty(
+    'transform-origin',
+    `${String(transformOrigin.x)}px ${String(transformOrigin.y)}px`,
+    'important',
+  )
+  wrapper.style.setProperty(
+    'will-change',
+    'opacity, transform, filter',
+    'important',
+  )
+  return wrapper
+}
+
+function createOccludingSurface({
+  candidates,
+  phase,
+  view,
+  visualBoundary,
+}: {
+  candidates: readonly OccluderGeometry[]
+  phase: 'source' | 'target'
+  view: HTMLElement
+  visualBoundary: Element
+}): OccludingSurface | null {
+  if (candidates.length === 0) {
+    return null
+  }
+
+  let viewRect: SharedRect
+
+  try {
+    viewRect = copyRect(view.getBoundingClientRect())
+  } catch {
+    return null
+  }
+
+  if (!isUsableRect(viewRect)) {
+    return null
+  }
+
+  const surface = createOccludingSurfaceElement(
+    view.ownerDocument,
+    viewRect,
+    phase,
+  )
+  let appended = 0
+
+  for (const candidate of candidates) {
+    const clone = cloneVisualElement(candidate.element)
+
+    if (!clone) {
+      continue
+    }
+
+    const wrapper = createOccludingLayerWrapper(
+      view.ownerDocument,
+      candidate.rect,
+      viewRect,
+      getOverflow(candidate.element),
+    )
+    wrapper.style.setProperty(
+      'z-index',
+      String(appended + 1),
+      'important',
+    )
+    prepareVisualRoot(clone, candidate.element, visualBoundary)
+    wrapper.append(clone)
+    surface.append(wrapper)
+    appended += 1
+  }
+
+  return appended > 0 ? { element: surface } : null
 }
 
 function getBorderRadius(element: Element): string {
@@ -2831,10 +3732,16 @@ export class SharedElementSession {
   private readonly visualBoundary: Element
   private readonly snapshotWrapper: HTMLElement
   private readonly snapshotReadinessElements: readonly Element[]
+  private readonly sourceOccluderSurface: OccludingSurface | null
+  private readonly targetPromotionCandidates: PromotedTargetCandidate[] = []
+  private readonly promotedTargetLayers: PromotedTargetLayer[] = []
   private readonly viewOpacity = new Map<HTMLElement, StyleOwnership>()
   private readonly sessionAnimations = new Set<Animation>()
+  private readonly sourceOccluderAnimations = new Set<Animation>()
   private releaseFixedTracking: (() => void) | null = null
   private sourceHandoffFrozen = false
+  private sourceOccluderAnimationsMirrored = false
+  private snapshotRemoved = false
   private activated = false
   private cleaned = false
   private targetCutoff: number
@@ -2845,6 +3752,7 @@ export class SharedElementSession {
     visualBoundary: Element,
     snapshotWrapper: HTMLElement,
     snapshotClone: Element,
+    sourceOccluderSurface: OccludingSurface | null,
     targetCutoff: number,
     snapshotReadinessElements?: readonly Element[],
   ) {
@@ -2852,6 +3760,7 @@ export class SharedElementSession {
     this.sources = sources
     this.visualBoundary = visualBoundary
     this.snapshotWrapper = snapshotWrapper
+    this.sourceOccluderSurface = sourceOccluderSurface
     this.snapshotReadinessElements = snapshotReadinessElements
       ?? [snapshotClone]
     this.targetCutoff = targetCutoff
@@ -2884,6 +3793,9 @@ export class SharedElementSession {
       [
         ...this.snapshotReadinessElements,
         ...this.sources.map((source) => source.sourceClone),
+        ...(this.sourceOccluderSurface
+          ? [this.sourceOccluderSurface.element]
+          : []),
       ],
       signal,
     )
@@ -2990,6 +3902,7 @@ export class SharedElementSession {
     const duplicateNames: string[] = []
     const registrationList = [...registrations]
     const viewOwnership = this.viewOpacity.get(view)
+    const stackingOrder = getElementOrderMap(view)
     const preparations = temporarilyRestoreStyle(viewOwnership, () => (
       this.sources.map((source) => {
         const candidates = targetCandidates(
@@ -3043,6 +3956,11 @@ export class SharedElementSession {
               rect,
               borderRadius: getBorderRadius(registration.element),
               frameStyle: getFrameStyle(registration.element),
+              stackingPath: getStackingPath(
+                registration.element,
+                view,
+                stackingOrder,
+              ),
               visualOpacity: getVisualOpacity(
                 registration.element,
                 this.visualBoundary,
@@ -3068,6 +3986,19 @@ export class SharedElementSession {
     ))
 
     temporarilyRestoreStyle(viewOwnership, () => {
+      const targetGeometries: OccluderGeometry[] = matchedPreparations.map(
+        (preparation) => ({
+          element: preparation.registration.element,
+          rect: preparation.rect,
+          stackingPath: preparation.stackingPath,
+        }),
+      )
+      this.replaceTargetPromotionCandidates(collectPromotedTargetCandidates({
+        geometries: targetGeometries,
+        order: stackingOrder,
+        view,
+      }))
+
       for (const preparation of matchedPreparations) {
         createCloneExclusions(
           preparation.registration.element,
@@ -3095,6 +4026,7 @@ export class SharedElementSession {
           ),
           borderRadius: preparation.borderRadius,
           frameStyle: preparation.frameStyle,
+          stackingPath: preparation.stackingPath,
           styleMorphs: styleMorphs || [],
           visualOpacity: preparation.visualOpacity,
           opacity: ownOpacity(preparation.registration.element),
@@ -3180,6 +4112,7 @@ export class SharedElementSession {
 
     const animations: Animation[] = []
     const movementRects = this.prepareDocumentMovement()
+    this.mirrorSnapshotAnimationsToSourceOccluders()
 
     for (const source of this.sources) {
       const target = source.target
@@ -3422,10 +4355,17 @@ export class SharedElementSession {
       return
     }
 
-    const detachedRoot = createDetachedHandoffRoot(
-      this.root,
-      this.visualBoundary,
-    )
+    // When real target stacking layers are promoted into the shared portal,
+    // keep the shared wrapper in that same stacking root for handoff. Moving
+    // it into a detached sibling root would create a new top-level stacking
+    // context that paints above the promoted real elements, briefly flipping
+    // their z-order during the final shared fade.
+    const detachedRoot = this.promotedTargetLayers.length > 0
+      ? null
+      : createDetachedHandoffRoot(
+          this.root,
+          this.visualBoundary,
+        )
     const detachedEntries = detachedRoot
       ? this.sources.flatMap((source) => {
           const frozen = freezeWrapperAtTarget(source)
@@ -3513,6 +4453,330 @@ export class SharedElementSession {
     }
   }
 
+  private replaceTargetPromotionCandidates(
+    candidates: readonly PromotedTargetCandidate[],
+  ): void {
+    this.restorePromotedTargetLayers()
+    this.targetPromotionCandidates.length = 0
+    this.targetPromotionCandidates.push(...candidates)
+  }
+
+  promoteTargetLayers(view: HTMLElement): void {
+    if (
+      this.cleaned
+      || this.promotedTargetLayers.length > 0
+      || this.targetPromotionCandidates.length === 0
+    ) {
+      return
+    }
+
+    let rootOrigin = { left: 0, top: 0 }
+    let viewRect: SharedRect
+
+    try {
+      const rootRect = toDocumentRect(
+        this.root,
+        copyRect(this.root.getBoundingClientRect()),
+      )
+      rootOrigin = {
+        left: rootRect.left,
+        top: rootRect.top,
+      }
+      viewRect = copyRect(view.getBoundingClientRect())
+    } catch {
+      return
+    }
+
+    const ownerWindow = view.ownerDocument.defaultView
+    const viewStyle = ownerWindow?.getComputedStyle(view)
+    const originParts = viewStyle?.transformOrigin.split(/\s+/u) ?? []
+    const viewOriginX = viewRect.left + parseTransformOrigin(
+      originParts[0] || '50%',
+      viewRect.width,
+    )
+    const viewOriginY = viewRect.top + parseTransformOrigin(
+      originParts[1] || '50%',
+      viewRect.height,
+    )
+
+    for (const candidate of this.targetPromotionCandidates) {
+      const element = candidate.element
+
+      if (!element.isConnected || !view.contains(element)) {
+        continue
+      }
+
+      const originalParent = element.parentNode
+
+      if (!originalParent) {
+        continue
+      }
+
+      const originalNextSibling = element.nextSibling
+      let rect: SharedRect
+
+      // Target candidates are discovered while the incoming route is being
+      // prepared, which can be several frames before its enter phase starts.
+      // Scroll stabilization, font metrics, responsive layout, or other route
+      // work may move the real element in that time. Always promote from its
+      // live geometry so the temporary wrapper and the restored DOM position
+      // are pixel-identical at handoff.
+      try {
+        rect = copyRect(element.getBoundingClientRect())
+      } catch {
+        continue
+      }
+
+      if (!isUsableRect(rect)) {
+        continue
+      }
+
+      const documentRect = toDocumentRect(element, rect)
+      const placeholder = createPromotedTargetPlaceholder(
+        element,
+        rect,
+      )
+      const styleSnapshots = captureAndFreezeInlineStyles(element)
+      const wrapper = createPromotedTargetWrapper(
+        element.ownerDocument,
+        documentRect,
+        rootOrigin,
+        {
+          x: viewOriginX - rect.left,
+          y: viewOriginY - rect.top,
+        },
+      )
+
+      try {
+        originalParent.insertBefore(placeholder, element)
+        wrapper.append(element)
+        this.root.append(wrapper)
+
+        element.style.setProperty('position', 'absolute', 'important')
+        element.style.setProperty('inset', 'auto', 'important')
+        element.style.setProperty('left', '0', 'important')
+        element.style.setProperty('top', '0', 'important')
+        element.style.setProperty('right', 'auto', 'important')
+        element.style.setProperty('bottom', 'auto', 'important')
+        element.style.setProperty('width', '100%', 'important')
+        element.style.setProperty('height', '100%', 'important')
+        element.style.setProperty('margin', '0', 'important')
+        element.style.setProperty('pointer-events', 'none', 'important')
+
+        this.promotedTargetLayers.push({
+          ...candidate,
+          rect,
+          documentRect,
+          placeholder,
+          originalParent,
+          originalNextSibling,
+          styleSnapshots,
+          wrapper,
+          animations: new Set<Animation>(),
+        })
+      } catch {
+        wrapper.remove()
+        placeholder.remove()
+
+        try {
+          originalParent.insertBefore(element, originalNextSibling)
+        } catch {
+          // The incoming route changed while promotion was being prepared.
+        }
+
+        restoreInlineStyles(styleSnapshots)
+      }
+    }
+
+    this.applySharedStacking(true)
+  }
+
+  async animatePromotedTargetLayers(
+    phase: AnimationPhaseDefinition,
+    onAnimation: (animation: Animation) => void,
+  ): Promise<void> {
+    if (this.cleaned || this.promotedTargetLayers.length === 0) {
+      return
+    }
+
+    const animations: Animation[] = []
+
+    for (const layer of this.promotedTargetLayers) {
+      if (!layer.wrapper.isConnected) {
+        continue
+      }
+
+      try {
+        const animation = layer.wrapper.animate(
+          phase.keyframes,
+          phase.options,
+        )
+        animations.push(animation)
+        layer.animations.add(animation)
+        this.sessionAnimations.add(animation)
+        onAnimation(animation)
+      } catch {
+        continue
+      }
+    }
+
+    await Promise.all(animations.map(async (animation) => {
+      try {
+        await animation.finished
+      } catch {
+        return
+      }
+    }))
+  }
+
+  private restorePromotedTargetLayers(): void {
+    for (const layer of [...this.promotedTargetLayers].reverse()) {
+      cancelAnimations([...layer.animations])
+
+      for (const animation of layer.animations) {
+        this.sessionAnimations.delete(animation)
+      }
+
+      layer.animations.clear()
+
+      try {
+        if (layer.placeholder.parentNode) {
+          layer.placeholder.parentNode.insertBefore(
+            layer.element,
+            layer.placeholder,
+          )
+        } else if (layer.originalParent.isConnected) {
+          const nextSibling = (
+            layer.originalNextSibling
+            && layer.originalNextSibling.parentNode === layer.originalParent
+          )
+            ? layer.originalNextSibling
+            : null
+          layer.originalParent.insertBefore(layer.element, nextSibling)
+        }
+      } catch {
+        // If React already removed the incoming subtree, wrapper removal below
+        // safely removes the promoted node with it.
+      }
+
+      restoreInlineStyles(layer.styleSnapshots)
+      layer.placeholder.remove()
+      layer.wrapper.remove()
+    }
+
+    this.promotedTargetLayers.length = 0
+  }
+
+  private applySharedStacking(targetPhase: boolean): void {
+    const participants = [
+      ...this.sources.flatMap((source) => {
+        const path = targetPhase
+          ? source.target?.stackingPath
+          : source.stackingPath
+
+        return path
+          ? [{
+              order: source.registration.order,
+              path,
+              wrapper: source.wrapper,
+            }]
+          : []
+      }),
+      ...(targetPhase
+        ? this.promotedTargetLayers.map((layer) => ({
+            order: layer.order,
+            path: layer.stackingPath,
+            wrapper: layer.wrapper,
+          }))
+        : []),
+    ]
+
+    participants.sort((first, second) => (
+      compareStackingPaths(first.path, second.path)
+      || first.order - second.order
+    ))
+
+    for (let index = 0; index < participants.length; index += 1) {
+      participants[index]!.wrapper.style.setProperty(
+        'z-index',
+        String(index + 1),
+        'important',
+      )
+    }
+
+    const occluderZIndex = String(Math.max(2, participants.length + 1))
+    this.sourceOccluderSurface?.element.style.setProperty(
+      'z-index',
+      occluderZIndex,
+      'important',
+    )
+  }
+
+  private mirrorSnapshotAnimationsToSourceOccluders(): void {
+    const surface = this.sourceOccluderSurface?.element
+
+    if (
+      !surface
+      || this.sourceOccluderAnimationsMirrored
+      || this.snapshotRemoved
+    ) {
+      return
+    }
+
+    this.sourceOccluderAnimationsMirrored = true
+    let animations: Animation[]
+
+    try {
+      animations = this.snapshotWrapper.getAnimations()
+    } catch {
+      return
+    }
+
+    for (const sourceAnimation of animations) {
+      const effect = sourceAnimation.effect
+
+      if (
+        !effect
+        || !('getKeyframes' in effect)
+        || typeof effect.getKeyframes !== 'function'
+      ) {
+        continue
+      }
+
+      try {
+        const animation = surface.animate(
+          effect.getKeyframes() as Keyframe[],
+          effect.getTiming(),
+        )
+        animation.playbackRate = sourceAnimation.playbackRate
+
+        if (sourceAnimation.currentTime !== null) {
+          animation.currentTime = sourceAnimation.currentTime
+        }
+
+        if (sourceAnimation.playState === 'paused') {
+          animation.pause()
+        }
+
+        this.sourceOccluderAnimations.add(animation)
+        this.sessionAnimations.add(animation)
+      } catch {
+        continue
+      }
+    }
+  }
+
+  private removeSourceOccluders(): void {
+    cancelAnimations([...this.sourceOccluderAnimations])
+
+    for (const animation of this.sourceOccluderAnimations) {
+      this.sessionAnimations.delete(animation)
+    }
+
+    this.sourceOccluderAnimations.clear()
+    this.sourceOccluderSurface?.element.remove()
+  }
+
   private alignFixedSources(): void {
     if (this.cleaned || this.root.style.position !== 'fixed') {
       return
@@ -3551,6 +4815,9 @@ export class SharedElementSession {
   }
 
   private stageSourceCoverage(): void {
+    this.applySharedStacking(false)
+    this.sourceOccluderSurface?.element.style.setProperty('opacity', '1')
+
     for (const source of this.sources) {
       if (source.snapshotElement && isSupportedElement(source.snapshotElement)) {
         source.snapshotOpacity ??= ownOpacity(source.snapshotElement)
@@ -3755,7 +5022,14 @@ export class SharedElementSession {
   }
 
   removeSnapshot(): void {
+    if (this.snapshotRemoved) {
+      return
+    }
+
+    this.snapshotRemoved = true
     this.snapshotWrapper.remove()
+    this.removeSourceOccluders()
+    this.applySharedStacking(true)
   }
 
   revealViews(): void {
@@ -3791,8 +5065,11 @@ export class SharedElementSession {
       }
     }
 
+    this.restorePromotedTargetLayers()
+    this.targetPromotionCandidates.length = 0
     this.revealViews()
-    this.removeSnapshot()
+    this.removeSourceOccluders()
+    this.snapshotWrapper.remove()
     this.root.remove()
     this.root.replaceChildren()
     this.sources.length = 0
@@ -3872,6 +5149,7 @@ export function createSharedElementSession(
   prepareVisualRoot(snapshotClone, view, visualBoundary)
   snapshotWrapper.append(snapshotClone)
 
+  const sourceStackingOrder = getElementOrderMap(view)
   const measurements = registrations.map((registration) => {
     try {
       const rect = copyRect(registration.element.getBoundingClientRect())
@@ -3887,6 +5165,11 @@ export function createSharedElementSession(
         handoffRect: null,
         borderRadius: getBorderRadius(registration.element),
         frameStyle: getFrameStyle(registration.element),
+        stackingPath: getStackingPath(
+          registration.element,
+          view,
+          sourceStackingOrder,
+        ),
         overflow: getOverflow(registration.element),
         visualOpacity: getVisualOpacity(registration.element, visualBoundary),
         visualIdentity: getVisualIdentity(registration.element),
@@ -3911,6 +5194,7 @@ export function createSharedElementSession(
       handoffRect,
       borderRadius,
       frameStyle,
+      stackingPath,
       overflow,
       visualOpacity,
       visualIdentity,
@@ -3939,6 +5223,7 @@ export function createSharedElementSession(
       handoffRect,
       borderRadius,
       frameStyle,
+      stackingPath,
       visualOpacity,
       visualIdentity,
       wrapper,
@@ -3952,6 +5237,25 @@ export function createSharedElementSession(
   if (prepared.length === 0) {
     return null
   }
+
+  const sourceGeometries: OccluderGeometry[] = measurements.map(
+    (measurement) => ({
+      element: measurement.registration.element,
+      rect: measurement.rect,
+      stackingPath: measurement.stackingPath,
+    }),
+  )
+  const sourceOccluders = collectOccluderCandidates({
+    geometries: sourceGeometries,
+    order: sourceStackingOrder,
+    view,
+  })
+  const sourceOccluderSurface = createOccludingSurface({
+    candidates: sourceOccluders,
+    phase: 'source',
+    view,
+    visualBoundary,
+  })
 
   const snapshotReadinessElements = getVisibleSnapshotImages(
     snapshotElements,
@@ -3987,6 +5291,10 @@ export function createSharedElementSession(
       root.append(entry.wrapper)
     }
 
+    if (sourceOccluderSurface) {
+      root.append(sourceOccluderSurface.element)
+    }
+
     for (const entry of prepared) {
       sources.push({
         ...entry,
@@ -4001,6 +5309,7 @@ export function createSharedElementSession(
       visualBoundary,
       snapshotWrapper,
       snapshotClone,
+      sourceOccluderSurface,
       targetCutoff,
       snapshotReadinessElements,
     )

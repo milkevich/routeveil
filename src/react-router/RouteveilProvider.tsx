@@ -3455,6 +3455,7 @@ export function RouteveilProvider({
         startIncomingAnimations()
 
         if (keepSharedSessionThroughEnter && sharedSession) {
+          sharedSession.promoteTargetLayers(enteringView)
           sharedSession.revealViews()
           run.suppressIncomingView = false
         }
@@ -3463,11 +3464,19 @@ export function RouteveilProvider({
           setRunPhase(run, 'entering')
           await waitForTask(
             run,
-            animatePhase(
-              enteringView,
-              enterPhase,
-              (animation) => run.animations.add(animation),
-            ),
+            Promise.all([
+              animatePhase(
+                enteringView,
+                enterPhase,
+                (animation) => run.animations.add(animation),
+              ),
+              sharedSession
+                ? sharedSession.animatePromotedTargetLayers(
+                    enterPhase,
+                    (animation) => run.animations.add(animation),
+                  )
+                : Promise.resolve(),
+            ]).then(([animation]) => animation),
             ANIMATION_WATCHDOG_MS,
             new TransitionLifecycleError(
               'animation-timeout',
