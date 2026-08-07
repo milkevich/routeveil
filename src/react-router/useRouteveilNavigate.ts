@@ -5,6 +5,7 @@ import {
   useNavigate,
 } from 'react-router-dom'
 import { useRouteveilContext } from './RouteveilContext.js'
+import { canTransitionHistoryDelta } from './history-navigation.js'
 import type {
   RouteveilNavigate,
   RouteveilNavigateOptions,
@@ -48,6 +49,33 @@ export function useRouteveilNavigate(): RouteveilNavigate {
         ...navigateOptions
       } = options
 
+      if (typeof to === 'number') {
+        if (
+          !transition
+          || !canTransitionHistoryDelta(to)
+        ) {
+          return Promise.resolve(navigate(to))
+        }
+
+        return transitionTo({
+          to,
+          expectedPath: null,
+          historyAction: 'POP',
+          transition,
+          between,
+          commit: () => {
+            return navigate(to)
+          },
+          smoothScrollToTop,
+          scrollToSharedElement,
+          sharedElements,
+          sharedElementSource: {
+            kind: 'programmatic',
+            trigger: getActiveElement(),
+          },
+        })
+      }
+
       const resolved = resolvePath(to, location.pathname)
       const isCurrentLocation =
         resolved.pathname === location.pathname
@@ -73,6 +101,7 @@ export function useRouteveilNavigate(): RouteveilNavigate {
       return transitionTo({
         to,
         expectedPath: `${resolved.pathname}${resolved.search}${resolved.hash}`,
+        historyAction: routeveilNavigateOptions.replace ? 'REPLACE' : 'PUSH',
         transition,
         between,
         commit: () => {

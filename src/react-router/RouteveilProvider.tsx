@@ -32,6 +32,7 @@ import {
   type ActiveOverlay,
   type BetweenRegistrationInput,
   type RouteveilContextValue,
+  type RouteveilHistoryAction,
   type TransitionRequest,
 } from './RouteveilContext.js'
 import { RouteveilOverlayPortal } from './RouteveilOverlayPortal.js'
@@ -238,11 +239,41 @@ function getSharedScrollTargetName(
   return name || null
 }
 
+function getExpectedHistoryAction(
+  request: TransitionRequest,
+): RouteveilHistoryAction {
+  return request.historyAction
+    ?? (request.navigateOptions?.replace ? 'REPLACE' : 'PUSH')
+}
+
+function requestHasHash(request: TransitionRequest): boolean {
+  return request.expectedPath?.includes('#') ?? false
+}
+
+function ownsRequestedLocationChange(
+  run: TransitionRun,
+  currentLocation: LocationSnapshot,
+  action: string,
+): boolean {
+  if (
+    run.request.waitForLocationChange === false
+    || run.commitState !== 'committing'
+    || action !== getExpectedHistoryAction(run.request)
+  ) {
+    return false
+  }
+
+  return (
+    run.request.expectedPath === null
+    || currentLocation.path === run.request.expectedPath
+  )
+}
+
 function shouldWaitForSharedScroll(
   request: TransitionRequest,
   allowSharedFallback = false,
 ): boolean {
-  const hasHash = request.expectedPath.includes('#')
+  const hasHash = requestHasHash(request)
   const hasSharedScrollTarget = getSharedScrollTargetName(request) !== null
 
   return hasHash || (
@@ -258,7 +289,7 @@ function waitForSharedScroll(
   signal: AbortSignal,
   allowSharedFallback = false,
 ): Promise<void> {
-  const hasHash = request.expectedPath.includes('#')
+  const hasHash = requestHasHash(request)
 
   if (
     !shouldWaitForSharedScroll(request, allowSharedFallback)
@@ -817,7 +848,7 @@ function scrollAfterNavigation(
 ): void {
   if (
     request.navigateOptions?.preventScrollReset
-    || request.expectedPath.includes('#')
+    || requestHasHash(request)
     || (
       getSharedScrollTargetName(request) !== null
       && !allowSharedFallback
@@ -1571,17 +1602,17 @@ export function RouteveilProvider({
     const run = activeRunRef.current
 
     if (run && !run.finalized && !run.controller.signal.aborted) {
-      const expectedAction = run.request.navigateOptions?.replace
-        ? 'REPLACE'
-        : 'PUSH'
-      const ownsLocationChange = (
-        run.request.waitForLocationChange !== false
-        && run.commitState === 'committing'
-        && currentLocation.path === run.request.expectedPath
-        && action === expectedAction
+      const ownsLocationChange = ownsRequestedLocationChange(
+        run,
+        currentLocation,
+        action,
       )
 
       if (ownsLocationChange) {
+        if (run.request.expectedPath === null) {
+          run.request.expectedPath = currentLocation.path
+        }
+
         run.commitState = 'committed'
         run.committedLocation = currentLocation
         run.acceptedLocation = currentLocation
@@ -1622,7 +1653,11 @@ export function RouteveilProvider({
         const pendingSnapshot = getLocationSnapshot(pendingLocation)
         const pendingBelongsToRun = (
           run.commitState === 'committing'
-          && pendingSnapshot.path === run.request.expectedPath
+          && state.historyAction === getExpectedHistoryAction(run.request)
+          && (
+            run.request.expectedPath === null
+            || pendingSnapshot.path === run.request.expectedPath
+          )
         )
 
         if (!pendingBelongsToRun) {
@@ -1631,15 +1666,13 @@ export function RouteveilProvider({
       }
 
       const currentLocation = getLocationSnapshot(state.location)
-      const expectedAction = run?.request.navigateOptions?.replace
-        ? 'REPLACE'
-        : 'PUSH'
       const awaitsRenderedLocation = Boolean(
         run
-        && run.request.waitForLocationChange !== false
-        && run.commitState === 'committing'
-        && currentLocation.path === run.request.expectedPath
-        && state.historyAction === expectedAction,
+        && ownsRequestedLocationChange(
+          run,
+          currentLocation,
+          state.historyAction,
+        )
       )
 
       if (
@@ -1691,15 +1724,9 @@ export function RouteveilProvider({
         key,
         path: `${pathname}${window.location.search}${window.location.hash}`,
       }
-      const expectedAction = run?.request.navigateOptions?.replace
-        ? 'REPLACE'
-        : 'PUSH'
       const awaitsRenderedLocation = Boolean(
         run
-        && run.request.waitForLocationChange !== false
-        && run.commitState === 'committing'
-        && currentLocation.path === run.request.expectedPath
-        && action === expectedAction,
+        && ownsRequestedLocationChange(run, currentLocation, action)
       )
 
       if (awaitsRenderedLocation) {
@@ -2373,7 +2400,7 @@ export function RouteveilProvider({
 
     if (
       sharedScrollTargetName
-      && !run.request.expectedPath.includes('#')
+      && !requestHasHash(run.request)
     ) {
       const result = await waitForSharedScrollTarget(
         run,
@@ -3274,7 +3301,7 @@ export function RouteveilProvider({
         if (
           sharedScrollTargetName
           && !run.sharedScrollFallback
-          && !request.expectedPath.includes('#')
+          && !requestHasHash(request)
         ) {
           let stableFrames = 0
 
@@ -3636,7 +3663,20 @@ export function RouteveilProvider({
         activeRequest
         && activeRequest.waitForLocationChange !== false
         && request.waitForLocationChange !== false
-        && activeRequest.expectedPath === request.expectedPath,
+        && getExpectedHistoryAction(activeRequest)
+          === getExpectedHistoryAction(request)
+        && (
+          (
+            activeRequest.expectedPath !== null
+            && activeRequest.expectedPath === request.expectedPath
+          )
+          || (
+            activeRequest.expectedPath === null
+            && request.expectedPath === null
+            && typeof activeRequest.to === 'number'
+            && activeRequest.to === request.to
+          )
+        ),
       )
 
       if (!isDuplicateNavigation) {
@@ -3651,6 +3691,7 @@ export function RouteveilProvider({
 
     if (
       request.waitForLocationChange !== false
+      && request.expectedPath !== null
       && observedLocationRef.current.path === request.expectedPath
     ) {
       return Promise.resolve()

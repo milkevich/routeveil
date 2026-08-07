@@ -259,7 +259,8 @@ export type SharedElementsOption =
 
 export type RouteveilLinkProps<
   TTransition extends TransitionName = TransitionName,
-> = LinkProps & {
+> = Omit<LinkProps, 'to'> & {
+  to: To | number
   transition?: RouteveilTransition<TTransition>
   between?: RouteveilBetweenInput
   smoothScrollToTop?: boolean
@@ -281,7 +282,7 @@ export type RouteveilNavigateOptions<
 export type RouteveilNavigate = <
   const TTransition extends RouteveilTransition = RouteveilTransition,
 >(
-  to: To,
+  to: To | number,
   options?: Omit<RouteveilNavigateOptions, 'transition'> & {
     transition?: RouteveilTransitionConstraint<TTransition>
   },

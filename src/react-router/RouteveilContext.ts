@@ -26,9 +26,12 @@ export type SharedElementSource =
       trigger: Element | null
     }
 
+export type RouteveilHistoryAction = 'PUSH' | 'REPLACE' | 'POP'
+
 export type TransitionRequest = {
-  to: To
-  expectedPath: string
+  to: To | number
+  expectedPath: string | null
+  historyAction?: RouteveilHistoryAction
   transition: RouteveilTransition
   between?: RouteveilBetweenInput
   commit: () => void | Promise<void>

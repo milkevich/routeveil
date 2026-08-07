@@ -21,6 +21,7 @@ import {
   useResolvedPath,
 } from 'react-router-dom'
 import { useRouteveilContext } from './RouteveilContext.js'
+import { canTransitionHistoryDelta } from './history-navigation.js'
 import type {
   RouteveilLinkProps,
   RouteveilTransition,
@@ -46,11 +47,11 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
 
 type TransitionDestination = {
   external: boolean
-  to: RouteveilLinkProps['to']
+  to: Exclude<RouteveilLinkProps['to'], number>
 }
 
 function getTransitionDestination(
-  to: RouteveilLinkProps['to'],
+  to: Exclude<RouteveilLinkProps['to'], number>,
   rootHref: string,
 ): TransitionDestination {
   if (
@@ -133,18 +134,26 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
   const location = useLocation()
   const rootHref = useHref('/')
   const linkRef = useRef<HTMLAnchorElement | null>(null)
-  const destination = getTransitionDestination(to, rootHref)
+  const currentPath = `${location.pathname}${location.search}${location.hash}`
+  const historyDelta = typeof to === 'number' ? to : null
+  const destination = getTransitionDestination(
+    typeof to === 'number' ? currentPath : to,
+    rootHref,
+  )
   const resolvedPath = useResolvedPath(destination.to, { relative })
-  const expectedPath = `${resolvedPath.pathname}${resolvedPath.search}${resolvedPath.hash}`
+  const expectedPath = historyDelta === null
+    ? `${resolvedPath.pathname}${resolvedPath.search}${resolvedPath.hash}`
+    : null
   const preload = preloadOverride ?? defaultPreload
 
-  const isCurrentLocation =
-    resolvedPath.pathname === location.pathname
+  const isCurrentLocation = historyDelta === null
+    && resolvedPath.pathname === location.pathname
     && resolvedPath.search === location.search
     && resolvedPath.hash === location.hash
 
   const canPreload = Boolean(
-    transition
+    historyDelta === null
+    && transition
     && preload !== false
     && !destination.external
     && !isCurrentLocation,
@@ -156,7 +165,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
   }, [forwardedRef])
 
   const preloadDestination = useCallback((): Promise<void> => {
-    if (!canPreload) {
+    if (!canPreload || expectedPath === null) {
       return Promise.resolve()
     }
 
@@ -240,8 +249,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
     onClick?.(event)
 
     if (
-      !transition
-      || event.defaultPrevented
+      event.defaultPrevented
       || event.button !== 0
       || isModifiedEvent(event)
       || (target && target !== '_self')
@@ -252,9 +260,57 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
       return
     }
 
+    if (historyDelta !== null) {
+      event.preventDefault()
+
+      if (
+        !transition
+        || !canTransitionHistoryDelta(historyDelta)
+      ) {
+        void navigate(historyDelta)
+        return
+      }
+
+      if (viewTransition) {
+        warnOnce(
+          'native-view-transition',
+          'Routeveil: React Router’s viewTransition option is ignored when a Routeveil transition is selected.',
+        )
+      }
+
+      void transitionTo({
+        to: historyDelta,
+        expectedPath: null,
+        historyAction: 'POP',
+        transition,
+        between,
+        commit: () => {
+          return navigate(historyDelta)
+        },
+        smoothScrollToTop,
+        scrollToSharedElement,
+        sharedElements,
+        clickPosition: event.detail === 0
+          ? undefined
+          : {
+              x: event.clientX,
+              y: event.clientY,
+            },
+        sharedElementSource: {
+          kind: 'link',
+          trigger: event.currentTarget,
+        },
+      })
+      return
+    }
+
+    if (!transition) {
+      return
+    }
+
     event.preventDefault()
 
-    if (isCurrentLocation) {
+    if (isCurrentLocation || expectedPath === null) {
       return
     }
 
@@ -268,6 +324,7 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
     void transitionTo({
       to: destination.to,
       expectedPath,
+      historyAction: replace ? 'REPLACE' : 'PUSH',
       transition,
       between,
       commit: () => {
@@ -311,17 +368,19 @@ const RouteveilLinkWithRef = forwardRef<HTMLAnchorElement, RouteveilLinkProps>(
     <Link
       ref={setLinkRef}
       {...linkProps}
-      to={to}
+      to={typeof to === 'number' ? currentPath : to}
       target={target}
       download={download}
       reloadDocument={reloadDocument || download !== undefined}
-      replace={replace}
-      state={state}
-      preventScrollReset={preventScrollReset}
+      replace={historyDelta === null ? replace : false}
+      state={historyDelta === null ? state : undefined}
+      preventScrollReset={historyDelta === null ? preventScrollReset : undefined}
       relative={relative}
-      viewTransition={viewTransition}
-      defaultShouldRevalidate={defaultShouldRevalidate}
-      mask={mask}
+      viewTransition={historyDelta === null ? viewTransition : false}
+      defaultShouldRevalidate={historyDelta === null
+        ? defaultShouldRevalidate
+        : undefined}
+      mask={historyDelta === null ? mask : undefined}
       onClick={handleClick}
       onFocus={handleFocus}
       onPointerDown={handlePointerDown}
