@@ -2,6 +2,26 @@
 
 Notable changes to Routeveil are documented here.
 
+## 0.4.1 - 2026-08-08
+
+**Shared Element Stability**
+
+Shared-element transitions now preserve their geometry more reliably while the incoming route settles.
+
+### Fixed
+
+- Stabilized shared-element scrolling across visual viewport and responsive layout changes
+- Waited for relevant image layout and decoding before measuring transition targets
+- Preserved fixed and sticky shared targets during scrolling and viewport changes
+- Kept page height, scroll range, and image geometry stable while viewport snapshots are active
+- Prevented same-page playback from resetting the document scroll position
+
+### Installation
+
+```bash
+npm install routeveil@0.4.1
+```
+
 ## 0.4.0 - 2026-08-02
 
 **Between Rendering**

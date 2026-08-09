@@ -41,6 +41,63 @@ export function getReleaseId(version: string): string {
 
 export const releases = [
   {
+    version: '0.4.1',
+    date: '2026-08-08',
+    title: 'Shared Element Stability',
+    description:
+      'Shared element transitions are now significantly more reliable and responsive across mobile browsers, complex scrolling layouts, and layered sticky or fixed interface elements.',
+    releaseUrl:
+      'https://github.com/milkevich/routeveil/releases/tag/v0.4.1',
+    sections: [
+      {
+        type: 'list',
+        title: 'Shared Elements',
+        titleUrl: '/lab/shared-elements',
+        items: [
+          'Stabilized shared-element destinations across mobile Safari and Chrome',
+          'Prevented incoming layouts from shifting shared targets after movement completes',
+          'Improved shared-element positioning when navigating to content deep within scrollable pages',
+          'Preserved accurate handoff between moving clones and their incoming elements',
+          'Improved snapshot performance without changing outgoing page appearance',
+          'Reduced delays before shared-element exit transitions begin',
+        ],
+      },
+      {
+        type: 'list',
+        title: 'Sticky and Fixed Layers',
+        items: [
+          'Kept higher z-index sticky and fixed elements above shared elements throughout transitions',
+          'Allowed promoted sticky and fixed elements to respond immediately while the user scrolls',
+          'Removed delayed positioning and snapping after enter or exit completes',
+          'Prevented persistent sticky interface outside RouteveilView from flashing during internal destination scrolling',
+        ],
+      },
+      {
+        type: 'list',
+        title: 'Navigation and Layout',
+        items: [
+          'Added transitioned history navigation through useRouteveilNavigate(-1)',
+          'Added numeric history navigation support to RouteveilLink',
+          'Safely coordinates POP navigation with incoming route rendering and shared-element matching',
+          'Prevented outgoing pages from visibly scrolling while their exit transition is playing',
+          'Prevented incoming routes from inheriting the outgoing route’s document height',
+          'Improved handling of lazy-loaded media that affects destination layout',
+          'Improved mobile viewport stabilization without changing shared-element movement semantics',
+        ],
+      },
+      {
+        type: 'basic',
+        title: 'Installation',
+        titleUrl: '/docs#installation',
+        code: {
+          filename: 'Terminal',
+          language: 'bash',
+          value: 'npm install routeveil@0.4.1',
+        },
+      },
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-08-02',
     title: 'Between Rendering',
@@ -176,7 +233,7 @@ export const releases = [
           'Preserved shared elements, preloading, reduced motion, and custom transitions',
         ],
       },
-          {
+      {
         type: 'basic',
         title: 'Installation',
         titleUrl: '/docs#installation',
@@ -411,7 +468,7 @@ export const releases = [
           'Verified React 18 and React Router DOM 6.27 compatibility',
         ],
       },
-          {
+      {
         type: 'basic',
         title: 'Installation',
         titleUrl: '/docs#installation',
@@ -424,32 +481,32 @@ export const releases = [
     ],
   },
   {
-  version: '0.1.1',
-  date: '2026-07-22',
-  title: 'Production Readiness',
-  description:
-    'This release strengthened Routeveil’s package output, documentation, metadata, deployment setup, and browser behavior after the initial launch.',
-  sections: [
-    {
-      type: 'list',
-      title: 'Package and Documentation',
-      items: [
-        'Corrected package output and public metadata',
-        'Clarified installation and the routeveil/react-router entry point',
-        'Expanded setup, router integration, and transition documentation',
-        'Improved browser compatibility details and package verification',
-      ],
-    },
-    {
-      type: 'list',
-      title: 'Runtime and Testing',
-      items: [
-        'Refined pixel-overlay runtime behavior',
-        'Expanded overlay and metadata test coverage',
-      ],
-    },
-  ],
-},
+    version: '0.1.1',
+    date: '2026-07-22',
+    title: 'Production Readiness',
+    description:
+      'This release strengthened Routeveil’s package output, documentation, metadata, deployment setup, and browser behavior after the initial launch.',
+    sections: [
+      {
+        type: 'list',
+        title: 'Package and Documentation',
+        items: [
+          'Corrected package output and public metadata',
+          'Clarified installation and the routeveil/react-router entry point',
+          'Expanded setup, router integration, and transition documentation',
+          'Improved browser compatibility details and package verification',
+        ],
+      },
+      {
+        type: 'list',
+        title: 'Runtime and Testing',
+        items: [
+          'Refined pixel-overlay runtime behavior',
+          'Expanded overlay and metadata test coverage',
+        ],
+      },
+    ],
+  },
   {
     version: '0.1.0',
     date: '2026-07-21',
