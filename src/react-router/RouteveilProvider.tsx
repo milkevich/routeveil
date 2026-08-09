@@ -68,6 +68,7 @@ import {
   animateViewportSnapshotPhase,
   createViewportSnapshot,
   pausePageViewAnimations,
+  retainPageViewLayout,
   retainViewportBackground,
   containViewportElementOverflow,
   suppressPageView,
@@ -213,8 +214,10 @@ const SHARED_TARGET_WATCHDOG_MS = 600
 const SHARED_TARGET_POLL_MS = 50
 const SHARED_SCROLL_WATCHDOG_MS = 1_200
 const SHARED_EXIT_LEAD_MS = 150
-const SHARED_SCROLL_STABILIZATION_FRAMES = 6
-const SHARED_SCROLL_STABLE_FRAMES = 2
+const SHARED_SCROLL_STABILIZATION_MS = 240
+const SHARED_SCROLL_STABLE_MS = 50
+const SHARED_LAYOUT_MEDIA_WATCHDOG_MS = 180
+const SHARED_SCROLL_STABILITY_EPSILON = 0.75
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 const HISTORY_CHANGE_EVENT = 'routeveil:historychange'
 
@@ -865,6 +868,52 @@ function scrollAfterNavigation(
   })
 }
 
+type SharedViewportMetrics = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+type SharedScrollState = {
+  scrollX: number
+  scrollY: number
+  target: {
+    left: number
+    top: number
+    width: number
+    height: number
+  }
+  viewport: SharedViewportMetrics
+}
+
+function getSharedViewportMetrics(): SharedViewportMetrics | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return null
+  }
+
+  const visualViewport = window.visualViewport
+  const left = visualViewport?.offsetLeft ?? 0
+  const top = visualViewport?.offsetTop ?? 0
+  const width = visualViewport?.width
+    ?? window.innerWidth
+    ?? document.documentElement.clientWidth
+  const height = visualViewport?.height
+    ?? window.innerHeight
+    ?? document.documentElement.clientHeight
+
+  return (
+    Number.isFinite(left)
+    && Number.isFinite(top)
+    && Number.isFinite(width)
+    && Number.isFinite(height)
+    && width > 0
+    && height > 0
+  )
+    ? { left, top, width, height }
+    : null
+}
+
 function scrollToSharedTarget(rect: {
   top: number
   height: number
@@ -873,30 +922,19 @@ function scrollToSharedTarget(rect: {
     return false
   }
 
-  const documentElement = document.documentElement
-  const body = document.body
-  const viewportHeight = window.innerHeight || documentElement.clientHeight
+  const viewport = getSharedViewportMetrics()
 
-  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+  if (!viewport) {
     return false
   }
 
-  const scrollHeight = Math.max(
-    documentElement.scrollHeight,
-    documentElement.offsetHeight,
-    documentElement.clientHeight,
-    body?.scrollHeight || 0,
-    body?.offsetHeight || 0,
-    body?.clientHeight || 0,
-  )
   const currentX = Number.isFinite(window.scrollX) ? window.scrollX : 0
   const currentY = Number.isFinite(window.scrollY) ? window.scrollY : 0
-  const maximumY = Math.max(0, scrollHeight - viewportHeight)
   const requestedY = currentY
     + rect.top
     + rect.height / 2
-    - viewportHeight / 2
-  const targetY = Math.min(maximumY, Math.max(0, requestedY))
+    - (viewport.top + viewport.height / 2)
+  const targetY = Math.max(0, requestedY)
 
   if (!Number.isFinite(targetY) || Math.abs(targetY - currentY) < 0.5) {
     return false
@@ -908,6 +946,528 @@ function scrollToSharedTarget(rect: {
     behavior: 'instant',
   })
   return true
+}
+
+
+type SharedTargetLayoutPreparation = {
+  release: () => void
+}
+
+function imageSourceKeys(image: HTMLImageElement): string[] {
+  const values = [
+    image.currentSrc,
+    image.src,
+    image.getAttribute('src') ?? '',
+  ].filter(Boolean)
+  const keys = new Set<string>()
+
+  for (const value of values) {
+    try {
+      keys.add(new URL(value, image.ownerDocument.baseURI).href)
+    } catch {
+      keys.add(value)
+    }
+  }
+
+  return [...keys]
+}
+
+function collectKnownImageAspectRatios(
+  view: HTMLElement,
+): ReadonlyMap<string, string> {
+  const ratios = new Map<string, string>()
+
+  for (const image of view.querySelectorAll<HTMLImageElement>('img')) {
+    if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      continue
+    }
+
+    const ratio = `${String(image.naturalWidth)} / ${String(image.naturalHeight)}`
+
+    for (const key of imageSourceKeys(image)) {
+      ratios.set(key, ratio)
+    }
+  }
+
+  return ratios
+}
+
+function getKnownImageAspectRatio(
+  image: HTMLImageElement,
+  knownRatios: ReadonlyMap<string, string>,
+): string | null {
+  for (const key of imageSourceKeys(image)) {
+    const ratio = knownRatios.get(key)
+
+    if (ratio) {
+      return ratio
+    }
+  }
+
+  return null
+}
+
+function getUnstableImagesBeforeSharedTarget(
+  view: HTMLElement,
+  target: HTMLElement | SVGElement,
+): HTMLImageElement[] {
+  const ownerWindow = view.ownerDocument.defaultView
+
+  if (!ownerWindow) {
+    return []
+  }
+
+  const following = ownerWindow.Node.DOCUMENT_POSITION_FOLLOWING
+  const images: HTMLImageElement[] = []
+
+  for (const image of view.querySelectorAll<HTMLImageElement>('img')) {
+    if (
+      image === target
+      || target.contains(image)
+      || !image.isConnected
+      || (image.compareDocumentPosition(target) & following) === 0
+    ) {
+      continue
+    }
+
+    let rect: DOMRect
+
+    try {
+      rect = image.getBoundingClientRect()
+    } catch {
+      continue
+    }
+
+    const style = ownerWindow.getComputedStyle(image)
+
+    if (
+      style.display === 'none'
+      || !Number.isFinite(rect.width)
+      || !Number.isFinite(rect.height)
+      || rect.width <= 0
+      || rect.height >= 0.5
+      || (image.complete && image.naturalWidth > 0)
+    ) {
+      continue
+    }
+
+    images.push(image)
+  }
+
+  return images
+}
+
+function imageHasLayout(image: HTMLImageElement): boolean {
+  if (image.complete && image.naturalWidth > 0) {
+    return true
+  }
+
+  try {
+    const rect = image.getBoundingClientRect()
+    return Number.isFinite(rect.height) && rect.height >= 0.5
+  } catch {
+    return false
+  }
+}
+
+function waitForImageLayout(
+  image: HTMLImageElement,
+  signal: AbortSignal,
+): Promise<void> {
+  if (imageHasLayout(image)) {
+    return Promise.resolve()
+  }
+
+  const ownerWindow = image.ownerDocument.defaultView
+
+  if (!ownerWindow || signal.aborted) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = 0
+    let frame = 0
+
+    const cleanup = () => {
+      ownerWindow.clearTimeout(timer)
+      ownerWindow.cancelAnimationFrame(frame)
+      image.removeEventListener('load', check)
+      image.removeEventListener('error', finish)
+      signal.removeEventListener('abort', finish)
+    }
+    const finish = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+      resolve()
+    }
+    const check = () => {
+      if (settled) {
+        return
+      }
+
+      if (imageHasLayout(image)) {
+        finish()
+        return
+      }
+
+      frame = ownerWindow.requestAnimationFrame(check)
+    }
+
+    image.addEventListener('load', check, { once: true })
+    image.addEventListener('error', finish, { once: true })
+    signal.addEventListener('abort', finish, { once: true })
+    timer = ownerWindow.setTimeout(finish, SHARED_LAYOUT_MEDIA_WATCHDOG_MS)
+    frame = ownerWindow.requestAnimationFrame(check)
+  })
+}
+
+async function prepareSharedTargetLayout(
+  view: HTMLElement,
+  target: HTMLElement | SVGElement,
+  knownRatios: ReadonlyMap<string, string>,
+  signal: AbortSignal,
+): Promise<SharedTargetLayoutPreparation> {
+  const images = getUnstableImagesBeforeSharedTarget(view, target)
+
+  if (images.length === 0 || signal.aborted) {
+    return { release: () => undefined }
+  }
+
+  const ownerships = images.map((image) => ({
+    image,
+    loading: image.getAttribute('loading'),
+    aspectRatio: image.style.getPropertyValue('aspect-ratio'),
+    aspectRatioPriority: image.style.getPropertyPriority('aspect-ratio'),
+    ownedAspectRatio: null as string | null,
+  }))
+  let released = false
+
+  const release = () => {
+    if (released) {
+      return
+    }
+
+    released = true
+
+    for (const ownership of ownerships) {
+      const { image } = ownership
+
+      if (image.getAttribute('loading') === 'eager') {
+        if (ownership.loading === null) {
+          image.removeAttribute('loading')
+        } else {
+          image.setAttribute('loading', ownership.loading)
+        }
+      }
+
+      if (
+        ownership.ownedAspectRatio
+        && image.style.getPropertyValue('aspect-ratio')
+          === ownership.ownedAspectRatio
+        && image.style.getPropertyPriority('aspect-ratio') === 'important'
+      ) {
+        if (ownership.aspectRatio) {
+          image.style.setProperty(
+            'aspect-ratio',
+            ownership.aspectRatio,
+            ownership.aspectRatioPriority,
+          )
+        } else {
+          image.style.removeProperty('aspect-ratio')
+        }
+      }
+    }
+  }
+
+  signal.addEventListener('abort', release, { once: true })
+
+  for (const ownership of ownerships) {
+    const { image } = ownership
+    image.setAttribute('loading', 'eager')
+    const ratio = getKnownImageAspectRatio(image, knownRatios)
+
+    if (ratio) {
+      ownership.ownedAspectRatio = ratio
+      image.style.setProperty('aspect-ratio', ratio, 'important')
+    }
+  }
+
+  await Promise.all(images.map((image) => waitForImageLayout(image, signal)))
+
+  if (!signal.aborted) {
+    await nextPaint(signal)
+  }
+
+  return { release }
+}
+
+type PersistentStickyLock = {
+  release: () => void
+}
+
+function copyRootComputedStyle(
+  source: HTMLElement,
+  clone: HTMLElement,
+): void {
+  const ownerWindow = source.ownerDocument.defaultView
+
+  if (!ownerWindow) {
+    return
+  }
+
+  const computed = ownerWindow.getComputedStyle(source)
+
+  for (let index = 0; index < computed.length; index += 1) {
+    const property = computed.item(index)
+    clone.style.setProperty(
+      property,
+      computed.getPropertyValue(property),
+      computed.getPropertyPriority(property),
+    )
+  }
+}
+
+function lockPersistentStickyLayers(
+  view: HTMLElement,
+): PersistentStickyLock {
+  const boundary = view.parentElement
+  const ownerWindow = view.ownerDocument.defaultView
+
+  if (!boundary || !ownerWindow) {
+    return { release: () => undefined }
+  }
+
+  const locked: Array<{
+    element: HTMLElement
+    originalOpacity: string
+    originalOpacityPriority: string
+    wrapper: HTMLElement
+  }> = []
+  const selected: HTMLElement[] = []
+
+  for (const element of boundary.querySelectorAll<HTMLElement>('*')) {
+    if (
+      view.contains(element)
+      || element === view
+      || element.closest(
+        'routeveil-shared-portal, routeveil-page-snapshot, routeveil-overlay',
+      )
+    ) {
+      continue
+    }
+
+    const style = ownerWindow.getComputedStyle(element)
+
+    if (
+      style.position !== 'sticky'
+      || style.display === 'none'
+      || style.visibility === 'hidden'
+      || Number.parseFloat(style.opacity || '1') <= 0
+      || selected.some((candidate) => candidate.contains(element))
+    ) {
+      continue
+    }
+
+    let rect: DOMRect
+
+    try {
+      rect = element.getBoundingClientRect()
+    } catch {
+      continue
+    }
+
+    if (
+      !Number.isFinite(rect.left)
+      || !Number.isFinite(rect.top)
+      || !Number.isFinite(rect.width)
+      || !Number.isFinite(rect.height)
+      || rect.width <= 0
+      || rect.height <= 0
+    ) {
+      continue
+    }
+
+    const clone = element.cloneNode(true) as HTMLElement
+    const wrapper = view.ownerDocument.createElement(
+      'routeveil-persistent-sticky-lock',
+    )
+
+    copyRootComputedStyle(element, clone)
+
+    for (const candidate of [
+      clone,
+      ...clone.querySelectorAll<HTMLElement>('*'),
+    ]) {
+      candidate.removeAttribute('id')
+      candidate.removeAttribute('autofocus')
+      candidate.setAttribute('aria-hidden', 'true')
+      candidate.style.setProperty('pointer-events', 'none', 'important')
+      candidate.style.setProperty('user-select', 'none', 'important')
+    }
+
+    clone.inert = true
+    clone.style.setProperty('position', 'absolute', 'important')
+    clone.style.setProperty('inset', '0', 'important')
+    clone.style.setProperty('left', '0', 'important')
+    clone.style.setProperty('top', '0', 'important')
+    clone.style.setProperty('right', '0', 'important')
+    clone.style.setProperty('bottom', '0', 'important')
+    clone.style.setProperty('width', '100%', 'important')
+    clone.style.setProperty('height', '100%', 'important')
+    clone.style.setProperty('margin', '0', 'important')
+
+    wrapper.setAttribute('aria-hidden', 'true')
+    wrapper.inert = true
+    wrapper.style.setProperty('all', 'initial')
+    wrapper.style.setProperty('display', 'block', 'important')
+    wrapper.style.setProperty('position', 'fixed', 'important')
+    wrapper.style.setProperty('left', `${String(rect.left)}px`, 'important')
+    wrapper.style.setProperty('top', `${String(rect.top)}px`, 'important')
+    wrapper.style.setProperty('width', `${String(rect.width)}px`, 'important')
+    wrapper.style.setProperty('height', `${String(rect.height)}px`, 'important')
+    wrapper.style.setProperty('margin', '0', 'important')
+    wrapper.style.setProperty('padding', '0', 'important')
+    wrapper.style.setProperty('border', '0', 'important')
+    wrapper.style.setProperty('overflow', 'visible', 'important')
+    wrapper.style.setProperty('pointer-events', 'none', 'important')
+    wrapper.style.setProperty(
+      'z-index',
+      style.zIndex || 'auto',
+      'important',
+    )
+    wrapper.append(clone)
+
+    const originalOpacity = element.style.getPropertyValue('opacity')
+    const originalOpacityPriority = element.style.getPropertyPriority('opacity')
+    element.style.setProperty('opacity', '0', 'important')
+
+    try {
+      boundary.append(wrapper)
+    } catch {
+      element.style.setProperty(
+        'opacity',
+        originalOpacity,
+        originalOpacityPriority,
+      )
+
+      if (!originalOpacity) {
+        element.style.removeProperty('opacity')
+      }
+
+      continue
+    }
+
+    selected.push(element)
+    locked.push({
+      element,
+      originalOpacity,
+      originalOpacityPriority,
+      wrapper,
+    })
+  }
+
+  let released = false
+
+  return {
+    release: () => {
+      if (released) {
+        return
+      }
+
+      released = true
+
+      for (const entry of locked) {
+        if (
+          entry.element.style.getPropertyValue('opacity') === '0'
+          && entry.element.style.getPropertyPriority('opacity') === 'important'
+        ) {
+          entry.element.style.setProperty(
+            'opacity',
+            entry.originalOpacity,
+            entry.originalOpacityPriority,
+          )
+
+          if (!entry.originalOpacity) {
+            entry.element.style.removeProperty('opacity')
+          }
+        }
+
+        entry.wrapper.remove()
+      }
+    },
+  }
+}
+
+function captureSharedScrollState(rect: {
+  left: number
+  top: number
+  width: number
+  height: number
+}): SharedScrollState | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const viewport = getSharedViewportMetrics()
+
+  if (!viewport) {
+    return null
+  }
+
+  return {
+    scrollX: Number.isFinite(window.scrollX) ? window.scrollX : 0,
+    scrollY: Number.isFinite(window.scrollY) ? window.scrollY : 0,
+    target: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    },
+    viewport,
+  }
+}
+
+function nearlyEqual(first: number, second: number): boolean {
+  return Math.abs(first - second) <= SHARED_SCROLL_STABILITY_EPSILON
+}
+
+function sharedScrollStatesMatch(
+  first: SharedScrollState,
+  second: SharedScrollState,
+): boolean {
+  return (
+    nearlyEqual(first.scrollX, second.scrollX)
+    && nearlyEqual(first.scrollY, second.scrollY)
+    && nearlyEqual(first.target.left, second.target.left)
+    && nearlyEqual(first.target.top, second.target.top)
+    && nearlyEqual(first.target.width, second.target.width)
+    && nearlyEqual(first.target.height, second.target.height)
+    && nearlyEqual(first.viewport.left, second.viewport.left)
+    && nearlyEqual(first.viewport.top, second.viewport.top)
+    && nearlyEqual(first.viewport.width, second.viewport.width)
+    && nearlyEqual(first.viewport.height, second.viewport.height)
+  )
+}
+
+function sharedTargetIsCentered(rect: {
+  top: number
+  height: number
+}): boolean {
+  const viewport = getSharedViewportMetrics()
+
+  if (!viewport) {
+    return true
+  }
+
+  return nearlyEqual(
+    rect.top + rect.height / 2,
+    viewport.top + viewport.height / 2,
+  )
 }
 
 function describeNormalizedTransition(
@@ -2297,6 +2857,7 @@ export function RouteveilProvider({
     waitForPaint = true,
     allowSharedScroll = false,
     deferIncomingReadiness = false,
+    deferRegularScroll = false,
   ): Promise<void> => {
     assertRunCurrent(run)
 
@@ -2399,7 +2960,8 @@ export function RouteveilProvider({
     let handledSharedScroll = false
 
     if (
-      sharedScrollTargetName
+      !run.sharedSession
+      && sharedScrollTargetName
       && !requestHasHash(run.request)
     ) {
       const result = await waitForSharedScrollTarget(
@@ -2414,7 +2976,6 @@ export function RouteveilProvider({
 
         if (
           scrollToSharedTarget(result.rect)
-          && !run.sharedSession
           && waitForPaint
         ) {
           await nextPaint(run.controller.signal)
@@ -2437,7 +2998,7 @@ export function RouteveilProvider({
       }
     }
 
-    if (!handledSharedScroll) {
+    if (!handledSharedScroll && !deferRegularScroll) {
       scrollAfterNavigation(
         run.request,
         run.sharedScrollFallback || !sharedScrollAllowed,
@@ -2831,8 +3392,9 @@ export function RouteveilProvider({
         const prepareIncomingPage = async (
           releaseOutgoingView: () => void,
           removeOutgoingViewCleanup: () => void,
+          deferRegularScroll = false,
         ) => {
-          await commitOnce(run, false, true, true)
+          await commitOnce(run, false, true, true, deferRegularScroll)
           assertRunCurrent(run)
 
           const enteringView = viewRef.current ?? pageView
@@ -2970,6 +3532,7 @@ export function RouteveilProvider({
         let sharedSession: SharedElementSession | null = null
         let releaseSharedSessionCleanup: () => void = () => undefined
         const sharedAnimations = new Set<Animation>()
+        const sharedImageAspectRatios = collectKnownImageAspectRatios(pageView)
         const cleanupSharedSession = () => {
           if (!sharedSession) {
             return
@@ -3093,6 +3656,11 @@ export function RouteveilProvider({
             run,
             outgoingSnapshot.cleanup,
           )
+          const releaseOutgoingLayout = retainPageViewLayout(pageView)
+          const removeOutgoingLayoutCleanup = registerCleanup(
+            run,
+            releaseOutgoingLayout,
+          )
           const releaseOutgoingView = suppressPageView(pageView)
           const removeOutgoingViewCleanup = registerCleanup(
             run,
@@ -3122,11 +3690,17 @@ export function RouteveilProvider({
             () => cancelAnimations([...run.animations]),
           )
           pauseIncomingAnimations()
+          const deferRegularScroll = (
+            request.waitForLocationChange !== false
+            && getSharedScrollTargetName(request) === null
+            && !requestHasHash(request)
+          )
           let incomingPreparation = run.between
             ? null
             : prepareIncomingPage(
                 releaseOutgoingView,
                 removeOutgoingViewCleanup,
+                deferRegularScroll,
               )
           const exitAnimation = await exitPromise
           assertRunCurrent(run)
@@ -3150,8 +3724,20 @@ export function RouteveilProvider({
           incomingPreparation ??= prepareIncomingPage(
             releaseOutgoingView,
             removeOutgoingViewCleanup,
+            deferRegularScroll,
           )
           const incoming = await incomingPreparation
+          assertRunCurrent(run)
+
+          if (deferRegularScroll) {
+            scrollAfterNavigation(request)
+            await nextPaint(run.controller.signal)
+            assertRunCurrent(run)
+          }
+
+          releaseOutgoingLayout()
+          removeOutgoingLayoutCleanup()
+          await nextPaint(run.controller.signal)
           assertRunCurrent(run)
           await ensurePageBetween(incoming.enteringView)
           assertRunCurrent(run)
@@ -3254,6 +3840,42 @@ export function RouteveilProvider({
 
         claimView(run, enteringView)
         sharedSession.suppressView(enteringView)
+
+        // Start the outgoing animation as soon as the incoming route exists
+        // and is hidden. Target registration, scroll settling, media readiness,
+        // and clone preparation can happen while the exit is already running
+        // instead of blocking the user's first visual response.
+        const activeSharedSession = sharedSession
+        const sharedExitStartedAt = exitPhase ? Date.now() : 0
+        const earlyExitTask = exitPhase
+          ? waitForTask(
+              run,
+              animatePhase(
+                activeSharedSession.getExitElement(),
+                exitPhase,
+                (animation) => run.animations.add(animation),
+              ),
+              ANIMATION_WATCHDOG_MS,
+              new TransitionLifecycleError(
+                'animation-timeout',
+                'Routeveil page exit animation did not settle.',
+              ),
+              () => cancelAnimations([...run.animations]),
+            ).then((animation) => {
+              assertRunCurrent(run)
+              activeSharedSession.removeSnapshot()
+              cancelAnimation(animation)
+              setRunPhase(run, 'navigating')
+            })
+          : null
+
+        if (earlyExitTask) {
+          // Give the compositor one paint with the exit animation active before
+          // Routeveil performs hidden destination scrolling/layout work.
+          await nextPaint(run.controller.signal)
+          assertRunCurrent(run)
+        }
+
         const sharedReadiness = waitForIncomingReadiness(run).catch((error) => {
           if (run.controller.signal.aborted) {
             return
@@ -3303,35 +3925,86 @@ export function RouteveilProvider({
           && !run.sharedScrollFallback
           && !requestHasHash(request)
         ) {
-          let stableFrames = 0
+          const initialTarget = sharedSession.resolveScrollTarget(
+            sharedRegistrationsRef.current.values(),
+            enteringView,
+            sharedScrollTargetName,
+          )
+          const persistentStickyLock = lockPersistentStickyLayers(enteringView)
 
-          for (
-            let frame = 0;
-            frame < SHARED_SCROLL_STABILIZATION_FRAMES;
-            frame += 1
-          ) {
-            const verification = sharedSession.resolveScrollTarget(
-              sharedRegistrationsRef.current.values(),
-              enteringView,
-              sharedScrollTargetName,
-            )
-
-            if (verification.status !== 'ready') {
-              break
+          try {
+            if (initialTarget.status === 'ready') {
+              // The selected target can be perfectly measurable while lazy
+              // images before it still contribute zero height. Load only those
+              // layout-critical images while exit is already playing, so the
+              // target cannot move after the clone starts traveling toward it.
+              const targetLayoutPreparation = await prepareSharedTargetLayout(
+                enteringView,
+                initialTarget.element,
+                sharedImageAspectRatios,
+                run.controller.signal,
+              )
+              registerCleanup(run, targetLayoutPreparation.release)
+              assertRunCurrent(run)
             }
 
-            if (scrollToSharedTarget(verification.rect)) {
-              stableFrames = 0
-            } else {
-              stableFrames += 1
+            const stabilizationStartedAt = Date.now()
+            let stableSince: number | null = null
+            let previousState: SharedScrollState | null = null
 
-              if (stableFrames >= SHARED_SCROLL_STABLE_FRAMES) {
+            while (
+              Date.now() - stabilizationStartedAt
+                < SHARED_SCROLL_STABILIZATION_MS
+            ) {
+              const verification = sharedSession.resolveScrollTarget(
+                sharedRegistrationsRef.current.values(),
+                enteringView,
+                sharedScrollTargetName,
+              )
+
+              if (verification.status !== 'ready') {
                 break
               }
-            }
 
-            await nextPaint(run.controller.signal)
-            assertRunCurrent(run)
+              scrollToSharedTarget(verification.rect)
+              await nextPaint(run.controller.signal)
+              assertRunCurrent(run)
+
+              const settled = sharedSession.resolveScrollTarget(
+                sharedRegistrationsRef.current.values(),
+                enteringView,
+                sharedScrollTargetName,
+              )
+
+              if (settled.status !== 'ready') {
+                stableSince = null
+                previousState = null
+                continue
+              }
+
+              const state = captureSharedScrollState(settled.rect)
+              const stable = Boolean(
+                state
+                && previousState
+                && sharedTargetIsCentered(settled.rect)
+                && sharedScrollStatesMatch(previousState, state)
+              )
+              const now = Date.now()
+
+              if (stable) {
+                stableSince ??= now
+
+                if (now - stableSince >= SHARED_SCROLL_STABLE_MS) {
+                  break
+                }
+              } else {
+                stableSince = null
+              }
+
+              previousState = state
+            }
+          } finally {
+            persistentStickyLock.release()
           }
         }
 
@@ -3384,7 +4057,6 @@ export function RouteveilProvider({
           }
         }
 
-        const activeSharedSession = sharedSession
         const runSharedMovement = () => waitForTask(
           run,
           activeSharedSession.animate(
@@ -3393,7 +4065,12 @@ export function RouteveilProvider({
               run.animations.add(animation)
               sharedAnimations.add(animation)
             },
-            exitPhase ? SHARED_EXIT_LEAD_MS : 0,
+            exitPhase
+              ? Math.max(
+                  0,
+                  SHARED_EXIT_LEAD_MS - (Date.now() - sharedExitStartedAt),
+                )
+              : 0,
           ),
           ANIMATION_WATCHDOG_MS,
           new TransitionLifecycleError(
@@ -3418,30 +4095,10 @@ export function RouteveilProvider({
         let movementCompleted = false
 
         if (exitPhase) {
-          const exitTask = waitForTask(
-            run,
-            animatePhase(
-              activeSharedSession.getExitElement(),
-              exitPhase,
-              (animation) => run.animations.add(animation),
-            ),
-            ANIMATION_WATCHDOG_MS,
-            new TransitionLifecycleError(
-              'animation-timeout',
-              'Routeveil page exit animation did not settle.',
-            ),
-            () => cancelAnimations([...run.animations]),
-          ).then((animation) => {
-            assertRunCurrent(run)
-            activeSharedSession.removeSnapshot()
-            cancelAnimation(animation)
-            setRunPhase(run, 'navigating')
-          })
-
           const movementTask = movementReady
             ? runSharedMovement()
             : Promise.resolve(false)
-          await exitTask
+          await earlyExitTask
           assertRunCurrent(run)
           await ensurePageBetween(enteringView)
           assertRunCurrent(run)
@@ -3483,6 +4140,10 @@ export function RouteveilProvider({
 
         if (keepSharedSessionThroughEnter && sharedSession) {
           sharedSession.promoteTargetLayers(enteringView)
+          sharedSession.startPromotedTargetTracking(
+            enteringView,
+            run.controller.signal,
+          )
           sharedSession.revealViews()
           run.suppressIncomingView = false
         }

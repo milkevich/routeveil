@@ -258,6 +258,62 @@ function copyControlState(source: HTMLElement, clone: HTMLElement): void {
   }
 }
 
+
+function freezeSnapshotImageGeometry(
+  source: HTMLElement,
+  clone: HTMLElement,
+): void {
+  const sourceImages = source.matches('img')
+    ? [source as HTMLImageElement]
+    : [...source.querySelectorAll<HTMLImageElement>('img')]
+  const cloneImages = clone.matches('img')
+    ? [clone as HTMLImageElement]
+    : [...clone.querySelectorAll<HTMLImageElement>('img')]
+  const count = Math.min(sourceImages.length, cloneImages.length)
+
+  for (let index = 0; index < count; index += 1) {
+    const sourceImage = sourceImages[index]
+    const cloneImage = cloneImages[index]
+
+    if (!sourceImage || !cloneImage) {
+      continue
+    }
+
+    let width = sourceImage.offsetWidth
+    let height = sourceImage.offsetHeight
+
+    if (width <= 0 || height <= 0) {
+      try {
+        const rect = sourceImage.getBoundingClientRect()
+        width = Math.max(width, rect.width)
+        height = Math.max(height, rect.height)
+      } catch {
+        continue
+      }
+    }
+
+    if (
+      !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width < 0
+      || height < 0
+    ) {
+      continue
+    }
+
+    const widthValue = `${String(width)}px`
+    const heightValue = `${String(height)}px`
+
+    cloneImage.style.setProperty('box-sizing', 'border-box', 'important')
+    cloneImage.style.setProperty('width', widthValue, 'important')
+    cloneImage.style.setProperty('height', heightValue, 'important')
+    cloneImage.style.setProperty('min-width', widthValue, 'important')
+    cloneImage.style.setProperty('max-width', widthValue, 'important')
+    cloneImage.style.setProperty('min-height', heightValue, 'important')
+    cloneImage.style.setProperty('max-height', heightValue, 'important')
+  }
+}
+
 function copyCustomProperties(
   source: HTMLElement,
   target: HTMLElement,
@@ -511,6 +567,91 @@ export function suppressPageView(view: HTMLElement): () => void {
   }
 }
 
+
+export function retainPageViewLayout(view: HTMLElement): () => void {
+  const ownerships: StyleOwnership[] = []
+  const document = view.ownerDocument
+  const documentElement = document.documentElement
+  const body = document.body
+  const ownerWindow = document.defaultView
+  let sentinel: HTMLElement | null = null
+
+  if (ownerWindow && body) {
+    let preservedBottom: number
+
+    try {
+      const rect = view.getBoundingClientRect()
+      const documentTop = ownerWindow.scrollY + rect.top
+      preservedBottom = Math.max(
+        documentTop + view.scrollHeight,
+        documentTop + view.offsetHeight,
+        ownerWindow.scrollY + rect.bottom,
+        documentElement?.scrollHeight ?? 0,
+        body.scrollHeight,
+      )
+    } catch {
+      preservedBottom = Math.max(
+        documentElement?.scrollHeight ?? 0,
+        body.scrollHeight,
+      )
+    }
+
+    if (Number.isFinite(preservedBottom) && preservedBottom > 0) {
+      sentinel = document.createElement('routeveil-scroll-range')
+      sentinel.setAttribute('data-routeveil-scroll-range', '')
+      sentinel.setAttribute('aria-hidden', 'true')
+      sentinel.inert = true
+      sentinel.style.setProperty('all', 'initial')
+      sentinel.style.setProperty('position', 'absolute', 'important')
+      sentinel.style.setProperty('left', '0', 'important')
+      sentinel.style.setProperty('top', '0', 'important')
+      sentinel.style.setProperty('width', '1px', 'important')
+      sentinel.style.setProperty(
+        'height',
+        `${String(preservedBottom)}px`,
+        'important',
+      )
+      sentinel.style.setProperty('margin', '0', 'important')
+      sentinel.style.setProperty('padding', '0', 'important')
+      sentinel.style.setProperty('border', '0', 'important')
+      sentinel.style.setProperty('visibility', 'hidden', 'important')
+      sentinel.style.setProperty('pointer-events', 'none', 'important')
+      sentinel.style.setProperty('overflow', 'hidden', 'important')
+      sentinel.style.setProperty('contain', 'strict', 'important')
+
+      try {
+        body.append(sentinel)
+      } catch {
+        sentinel.remove()
+        sentinel = null
+      }
+    }
+  }
+
+  ownStyle(ownerships, view, 'overflow-anchor', 'none')
+
+  if (documentElement) {
+    ownStyle(ownerships, documentElement, 'overflow-anchor', 'none')
+  }
+
+  if (body) {
+    ownStyle(ownerships, body, 'overflow-anchor', 'none')
+  }
+
+  let released = false
+
+  return () => {
+    if (released) {
+      return
+    }
+
+    released = true
+    sentinel?.remove()
+    sentinel = null
+    restoreOwnedStyles(ownerships)
+  }
+}
+
 export function containViewportElementOverflow(
   element: HTMLElement,
 ): () => void {
@@ -608,6 +749,7 @@ export function createViewportSnapshot(
   copyCustomProperties(view, clone, ownerWindow)
   copyCanvasFrames(view, clone)
   copyControlState(view, clone)
+  freezeSnapshotImageGeometry(view, clone)
   neutralizeSnapshot(clone)
 
   clone.style.setProperty('position', 'absolute', 'important')

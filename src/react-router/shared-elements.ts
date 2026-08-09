@@ -245,6 +245,8 @@ type PromotedTargetCandidate = {
   order: number
 }
 
+type PromotedTargetPosition = 'document' | 'fixed' | 'sticky'
+
 type PromotedTargetLayer = PromotedTargetCandidate & {
   placeholder: HTMLElement
   originalParent: Node
@@ -252,6 +254,11 @@ type PromotedTargetLayer = PromotedTargetCandidate & {
   styleSnapshots: InlineStyleSnapshot[]
   wrapper: HTMLElement
   animations: Set<Animation>
+  position: PromotedTargetPosition
+  viewTransformOrigin: {
+    left: number
+    top: number
+  }
 }
 
 type SharedMovement = {
@@ -269,6 +276,7 @@ export type SharedScrollTargetResolution =
   | {
       status: 'ready'
       rect: SharedRect
+      element: HTMLElement | SVGElement
     }
   | {
       status: 'duplicate' | 'missing' | 'pending'
@@ -277,6 +285,8 @@ export type SharedScrollTargetResolution =
 const SHARED_DURATION_MS = 480
 const SHARED_HANDOFF_DURATION_MS = 64
 const SHARED_MEDIA_READY_TIMEOUT_MS = 1_200
+const SHARED_ACTIVATION_MEDIA_READY_TIMEOUT_MS = 180
+const SHARED_MOVEMENT_MEDIA_READY_TIMEOUT_MS = 320
 const SHARED_TARGET_VISUAL_STABILITY_TIMEOUT_MS = 2_000
 const SHARED_TARGET_VISUAL_PROPERTIES = new Set([
   'backdropFilter',
@@ -531,11 +541,16 @@ function getCapturedVisualRect(
     return { status: 'invalid' }
   }
 
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
+  const visualViewport = window.visualViewport
+  const viewportLeft = visualViewport?.offsetLeft ?? 0
+  const viewportTop = visualViewport?.offsetTop ?? 0
+  const viewportWidth = visualViewport?.width ?? window.innerWidth
+  const viewportHeight = visualViewport?.height ?? window.innerHeight
 
   if (
-    !Number.isFinite(viewportWidth)
+    !Number.isFinite(viewportLeft)
+    || !Number.isFinite(viewportTop)
+    || !Number.isFinite(viewportWidth)
     || !Number.isFinite(viewportHeight)
     || viewportWidth <= 0
     || viewportHeight <= 0
@@ -546,8 +561,8 @@ function getCapturedVisualRect(
   return {
     status: 'valid',
     rect: {
-      left: 0,
-      top: 0,
+      left: viewportLeft,
+      top: viewportTop,
       width: viewportWidth,
       height: viewportHeight,
     },
@@ -690,16 +705,19 @@ function copyComputedStyle(source: Element, clone: Element): void {
   }
 
   const computed = view.getComputedStyle(source)
+  const declarations: string[] = []
 
   for (let index = 0; index < computed.length; index += 1) {
     const property = computed.item(index)
-    clone.style.setProperty(
-      property,
-      computed.getPropertyValue(property),
-      computed.getPropertyPriority(property),
+    const value = computed.getPropertyValue(property)
+    const priority = computed.getPropertyPriority(property)
+
+    declarations.push(
+      `${property}:${value}${priority ? ` !${priority}` : ''};`,
     )
   }
 
+  clone.style.cssText = declarations.join('')
   clone.style.setProperty('animation', 'none', 'important')
   clone.style.setProperty('transition', 'none', 'important')
   clone.style.setProperty('pointer-events', 'none', 'important')
@@ -717,6 +735,8 @@ function copyControlState(source: Element, clone: Element): void {
     cloneImage.src = sourceImage.currentSrc || sourceImage.src
     cloneImage.removeAttribute('srcset')
     cloneImage.removeAttribute('sizes')
+    cloneImage.loading = 'eager'
+    cloneImage.decoding = 'async'
     return
   }
 
@@ -940,6 +960,60 @@ function cloneVisualElement(
   } catch {
     return null
   }
+}
+
+
+function cloneSharedViewSnapshot(
+  source: HTMLElement,
+): HTMLElement | null {
+
+  const visualClone = cloneVisualElement(source)
+  const clone = visualClone instanceof source.ownerDocument.defaultView!.HTMLElement
+    ? visualClone
+    : null
+
+  if (!clone) {
+    return null
+  }
+
+  clone.setAttribute('data-routeveil-shared-batched-snapshot', '')
+
+  const sourceImages = source.matches('img')
+    ? [source as HTMLImageElement]
+    : [...source.querySelectorAll<HTMLImageElement>('img')]
+  const cloneImages = clone.matches('img')
+    ? [clone as HTMLImageElement]
+    : [...clone.querySelectorAll<HTMLImageElement>('img')]
+
+  for (let index = 0; index < sourceImages.length; index += 1) {
+    const sourceImage = sourceImages[index]
+    const cloneImage = cloneImages[index]
+
+    if (!sourceImage || !cloneImage) {
+      continue
+    }
+
+    let rect: SharedRect
+
+    try {
+      rect = copyRect(sourceImage.getBoundingClientRect())
+    } catch {
+      continue
+    }
+
+    if (!isUsableRect(rect)) {
+      continue
+    }
+
+    cloneImage.style.setProperty('width', `${String(rect.width)}px`, 'important')
+    cloneImage.style.setProperty('height', `${String(rect.height)}px`, 'important')
+    cloneImage.style.setProperty('min-width', `${String(rect.width)}px`, 'important')
+    cloneImage.style.setProperty('min-height', `${String(rect.height)}px`, 'important')
+    cloneImage.style.setProperty('max-width', `${String(rect.width)}px`, 'important')
+    cloneImage.style.setProperty('max-height', `${String(rect.height)}px`, 'important')
+  }
+
+  return clone
 }
 
 function createCloneExclusions(
@@ -1671,6 +1745,7 @@ async function waitForSharedPaint(
 function waitForImageLoad(
   image: HTMLImageElement,
   signal: AbortSignal,
+  timeoutMs = SHARED_MEDIA_READY_TIMEOUT_MS,
 ): Promise<boolean> {
   const source = image.currentSrc || image.src || image.getAttribute('src')
 
@@ -1716,7 +1791,7 @@ function waitForImageLoad(
     signal.addEventListener('abort', abort, { once: true })
     timer = view.setTimeout(
       () => finish(image.complete && image.naturalWidth > 0),
-      SHARED_MEDIA_READY_TIMEOUT_MS,
+      timeoutMs,
     )
   })
 }
@@ -1724,6 +1799,7 @@ function waitForImageLoad(
 function waitForImageDecode(
   image: HTMLImageElement,
   signal: AbortSignal,
+  timeoutMs = SHARED_MEDIA_READY_TIMEOUT_MS,
 ): Promise<boolean> {
   if (
     signal.aborted
@@ -1760,7 +1836,7 @@ function waitForImageDecode(
     signal.addEventListener('abort', abort, { once: true })
     timer = view.setTimeout(
       () => finish(image.complete && image.naturalWidth > 0),
-      SHARED_MEDIA_READY_TIMEOUT_MS,
+      timeoutMs,
     )
 
     void image.decode().then(
@@ -1773,17 +1849,19 @@ function waitForImageDecode(
 async function waitForImagePaintReady(
   image: HTMLImageElement,
   signal: AbortSignal,
+  timeoutMs = SHARED_MEDIA_READY_TIMEOUT_MS,
 ): Promise<boolean> {
-  if (!await waitForImageLoad(image, signal)) {
+  if (!await waitForImageLoad(image, signal, timeoutMs)) {
     return false
   }
 
-  return waitForImageDecode(image, signal)
+  return waitForImageDecode(image, signal, timeoutMs)
 }
 
 async function waitForElementsPaintReady(
   elements: readonly Element[],
   signal: AbortSignal,
+  timeoutMs = SHARED_MEDIA_READY_TIMEOUT_MS,
 ): Promise<boolean> {
   const images = [...new Set(elements.flatMap(getElementImages))]
 
@@ -1792,7 +1870,26 @@ async function waitForElementsPaintReady(
   }
 
   const readiness = await Promise.all(
-    images.map((image) => waitForImagePaintReady(image, signal)),
+    images.map((image) => waitForImagePaintReady(image, signal, timeoutMs)),
+  )
+
+  return !signal.aborted && readiness.every(Boolean)
+}
+
+
+async function waitForElementsLoadReady(
+  elements: readonly Element[],
+  signal: AbortSignal,
+  timeoutMs = SHARED_MEDIA_READY_TIMEOUT_MS,
+): Promise<boolean> {
+  const images = [...new Set(elements.flatMap(getElementImages))]
+
+  if (images.length === 0) {
+    return !signal.aborted
+  }
+
+  const readiness = await Promise.all(
+    images.map((image) => waitForImageLoad(image, signal, timeoutMs)),
   )
 
   return !signal.aborted && readiness.every(Boolean)
@@ -2366,7 +2463,11 @@ export function resolveSharedElementScrollTarget({
   const rect = measureTargetRegistration(registration)
 
   return rect
-    ? { status: 'ready', rect }
+    ? {
+        status: 'ready',
+        rect,
+        element: registration.element,
+      }
     : { status: 'pending' }
 }
 
@@ -3204,10 +3305,110 @@ function restoreInlineStyles(
   }
 }
 
+
+function getPromotedTargetPosition(
+  element: HTMLElement | SVGElement,
+): PromotedTargetPosition {
+  const position = element.ownerDocument.defaultView
+    ?.getComputedStyle(element).position
+
+  if (position === 'fixed') {
+    return 'fixed'
+  }
+
+  if (position === 'sticky' || position === '-webkit-sticky') {
+    return 'sticky'
+  }
+
+  return 'document'
+}
+
+function neutralizePositionProxy(element: HTMLElement): void {
+  element.setAttribute('data-routeveil-shared-position-proxy', '')
+  element.setAttribute('aria-hidden', 'true')
+  element.inert = true
+  element.removeAttribute('id')
+  element.removeAttribute('name')
+  element.removeAttribute('for')
+  element.removeAttribute('form')
+  element.removeAttribute('href')
+  element.removeAttribute('xlink:href')
+  element.removeAttribute('target')
+  element.removeAttribute('download')
+  element.removeAttribute('autofocus')
+  element.setAttribute('tabindex', '-1')
+
+  for (const attribute of [...element.attributes]) {
+    if (attribute.name.toLowerCase().startsWith('on')) {
+      element.removeAttribute(attribute.name)
+    }
+  }
+
+  element.replaceChildren()
+  element.style.setProperty('visibility', 'hidden', 'important')
+  element.style.setProperty('pointer-events', 'none', 'important')
+  element.style.setProperty('user-select', 'none', 'important')
+  element.style.setProperty('caret-color', 'transparent', 'important')
+  element.style.setProperty('animation', 'none', 'important')
+  element.style.setProperty('transition', 'none', 'important')
+}
+
+function createPromotedTargetPositionProxy(
+  element: HTMLElement | SVGElement,
+  rect: SharedRect,
+): HTMLElement | null {
+  const view = element.ownerDocument.defaultView
+
+  if (!view || !(element instanceof view.HTMLElement)) {
+    return null
+  }
+
+  let proxy: HTMLElement
+
+  try {
+    proxy = element.cloneNode(false) as HTMLElement
+  } catch {
+    return null
+  }
+
+  neutralizePositionProxy(proxy)
+
+  const style = view.getComputedStyle(element)
+  proxy.style.setProperty('box-sizing', 'border-box', 'important')
+  proxy.style.setProperty('width', `${String(rect.width)}px`, 'important')
+  proxy.style.setProperty('height', `${String(rect.height)}px`, 'important')
+  proxy.style.setProperty('min-width', `${String(rect.width)}px`, 'important')
+  proxy.style.setProperty('min-height', `${String(rect.height)}px`, 'important')
+  proxy.style.setProperty('max-width', `${String(rect.width)}px`, 'important')
+  proxy.style.setProperty('max-height', `${String(rect.height)}px`, 'important')
+  proxy.style.setProperty('margin-top', style.marginTop, 'important')
+  proxy.style.setProperty('margin-right', style.marginRight, 'important')
+  proxy.style.setProperty('margin-bottom', style.marginBottom, 'important')
+  proxy.style.setProperty('margin-left', style.marginLeft, 'important')
+
+  proxy.style.setProperty('position', style.position, 'important')
+  proxy.style.setProperty('top', style.top, 'important')
+  proxy.style.setProperty('right', style.right, 'important')
+  proxy.style.setProperty('bottom', style.bottom, 'important')
+  proxy.style.setProperty('left', style.left, 'important')
+
+  return proxy
+}
+
 function createPromotedTargetPlaceholder(
   element: HTMLElement | SVGElement,
   rect: SharedRect,
 ): HTMLElement {
+  const position = getPromotedTargetPosition(element)
+
+  if (position !== 'document') {
+    const proxy = createPromotedTargetPositionProxy(element, rect)
+
+    if (proxy) {
+      return proxy
+    }
+  }
+
   const document = element.ownerDocument
   const placeholder = document.createElement('routeveil-shared-placeholder')
   const style = document.defaultView?.getComputedStyle(element)
@@ -3226,8 +3427,6 @@ function createPromotedTargetPlaceholder(
     return placeholder
   }
 
-  // Absolutely/fixed positioned elements do not reserve layout space. The
-  // placeholder only acts as a stable DOM restoration marker for them.
   if (style.position === 'absolute' || style.position === 'fixed') {
     placeholder.style.setProperty('display', 'none', 'important')
     return placeholder
@@ -3251,8 +3450,6 @@ function createPromotedTargetPlaceholder(
   placeholder.style.setProperty('float', style.cssFloat, 'important')
   placeholder.style.setProperty('clear', style.clear, 'important')
 
-  // Preserve flex/grid item participation so removing the real element does
-  // not reflow siblings while it is temporarily promoted above the portal.
   placeholder.style.setProperty('flex-grow', style.flexGrow, 'important')
   placeholder.style.setProperty('flex-shrink', style.flexShrink, 'important')
   placeholder.style.setProperty('flex-basis', style.flexBasis, 'important')
@@ -3265,15 +3462,6 @@ function createPromotedTargetPlaceholder(
   placeholder.style.setProperty('grid-column-start', style.gridColumnStart, 'important')
   placeholder.style.setProperty('grid-column-end', style.gridColumnEnd, 'important')
 
-  // Inline-level boxes derive their line-box contribution from a baseline.
-  // An empty custom placeholder gets a synthesized baseline that can differ
-  // from the real element's content baseline (notably inline-grid/flex
-  // controls). That changes the following block's Y position by a few pixels
-  // while the real element is promoted, which makes the shared target and the
-  // promoted element snap together when the real node is restored. Keep a
-  // non-visual full-size baseline participant so the placeholder contributes
-  // the same bottom-edge baseline as the occupied inline box without cloning
-  // any user content.
   if (display.startsWith('inline')) {
     const baseline = document.createElement('routeveil-shared-placeholder-baseline')
     baseline.setAttribute('aria-hidden', 'true')
@@ -3327,7 +3515,6 @@ function createPromotedTargetWrapper(
   wrapper.style.setProperty('margin', '0', 'important')
   wrapper.style.setProperty('border', '0', 'important')
   wrapper.style.setProperty('background', 'transparent', 'important')
-  // These are animated by WAAPI during enter, so they cannot be !important.
   wrapper.style.setProperty('opacity', '1')
   wrapper.style.setProperty('visibility', 'visible', 'important')
   wrapper.style.setProperty('filter', 'none')
@@ -3739,6 +3926,7 @@ export class SharedElementSession {
   private readonly sessionAnimations = new Set<Animation>()
   private readonly sourceOccluderAnimations = new Set<Animation>()
   private releaseFixedTracking: (() => void) | null = null
+  private releasePromotedTargetTracking: (() => void) | null = null
   private sourceHandoffFrozen = false
   private sourceOccluderAnimationsMirrored = false
   private snapshotRemoved = false
@@ -3789,31 +3977,37 @@ export class SharedElementSession {
       return true
     }
 
-    const ready = await waitForElementsPaintReady(
+    const ready = await waitForElementsLoadReady(
       [
-        ...this.snapshotReadinessElements,
         ...this.sources.map((source) => source.sourceClone),
         ...(this.sourceOccluderSurface
           ? [this.sourceOccluderSurface.element]
           : []),
       ],
       signal,
+      SHARED_ACTIVATION_MEDIA_READY_TIMEOUT_MS,
     )
 
     if (
       !ready
       || this.cleaned
       || signal.aborted
-      || !await waitForSharedPaint(this.root.ownerDocument, signal)
+      || !await waitForSharedPaint(this.root.ownerDocument, signal, 1)
     ) {
       return false
     }
+
+    void waitForElementsLoadReady(
+      this.snapshotReadinessElements,
+      signal,
+      SHARED_ACTIVATION_MEDIA_READY_TIMEOUT_MS,
+    )
 
     this.snapshotWrapper.style.setProperty('opacity', '1')
     this.suppressView(view)
     this.stageSourceCoverage()
 
-    if (!await waitForSharedPaint(this.root.ownerDocument, signal, 2)) {
+    if (!await waitForSharedPaint(this.root.ownerDocument, signal, 1)) {
       return false
     }
 
@@ -4094,7 +4288,11 @@ export class SharedElementSession {
     }
 
     const ready = (
-      await waitForElementsPaintReady(elements, signal)
+      await waitForElementsPaintReady(
+        elements,
+        signal,
+        SHARED_MOVEMENT_MEDIA_READY_TIMEOUT_MS,
+      )
       && await waitForSharedPaint(this.root.ownerDocument, signal)
     )
 
@@ -4349,17 +4547,16 @@ export class SharedElementSession {
       source.target ? [source.target.registration.element] : []
     ))
 
-    await waitForElementsPaintReady(targetElements, signal)
+    await waitForElementsPaintReady(
+      targetElements,
+      signal,
+      SHARED_MOVEMENT_MEDIA_READY_TIMEOUT_MS,
+    )
 
     if (signal.aborted || this.cleaned) {
       return
     }
 
-    // When real target stacking layers are promoted into the shared portal,
-    // keep the shared wrapper in that same stacking root for handoff. Moving
-    // it into a detached sibling root would create a new top-level stacking
-    // context that paints above the promoted real elements, briefly flipping
-    // their z-order during the final shared fade.
     const detachedRoot = this.promotedTargetLayers.length > 0
       ? null
       : createDetachedHandoffRoot(
@@ -4470,7 +4667,7 @@ export class SharedElementSession {
       return
     }
 
-    let rootOrigin = { left: 0, top: 0 }
+    let rootOrigin: { left: number; top: number }
     let viewRect: SharedRect
 
     try {
@@ -4490,14 +4687,22 @@ export class SharedElementSession {
     const ownerWindow = view.ownerDocument.defaultView
     const viewStyle = ownerWindow?.getComputedStyle(view)
     const originParts = viewStyle?.transformOrigin.split(/\s+/u) ?? []
-    const viewOriginX = viewRect.left + parseTransformOrigin(
-      originParts[0] || '50%',
-      viewRect.width,
-    )
-    const viewOriginY = viewRect.top + parseTransformOrigin(
-      originParts[1] || '50%',
-      viewRect.height,
-    )
+    const scrollX = ownerWindow && Number.isFinite(ownerWindow.scrollX)
+      ? ownerWindow.scrollX
+      : 0
+    const scrollY = ownerWindow && Number.isFinite(ownerWindow.scrollY)
+      ? ownerWindow.scrollY
+      : 0
+    const viewTransformOrigin = {
+      left: viewRect.left + scrollX + parseTransformOrigin(
+        originParts[0] || '50%',
+        viewRect.width,
+      ),
+      top: viewRect.top + scrollY + parseTransformOrigin(
+        originParts[1] || '50%',
+        viewRect.height,
+      ),
+    }
 
     for (const candidate of this.targetPromotionCandidates) {
       const element = candidate.element
@@ -4515,12 +4720,6 @@ export class SharedElementSession {
       const originalNextSibling = element.nextSibling
       let rect: SharedRect
 
-      // Target candidates are discovered while the incoming route is being
-      // prepared, which can be several frames before its enter phase starts.
-      // Scroll stabilization, font metrics, responsive layout, or other route
-      // work may move the real element in that time. Always promote from its
-      // live geometry so the temporary wrapper and the restored DOM position
-      // are pixel-identical at handoff.
       try {
         rect = copyRect(element.getBoundingClientRect())
       } catch {
@@ -4532,6 +4731,7 @@ export class SharedElementSession {
       }
 
       const documentRect = toDocumentRect(element, rect)
+      const position = getPromotedTargetPosition(element)
       const placeholder = createPromotedTargetPlaceholder(
         element,
         rect,
@@ -4542,10 +4742,16 @@ export class SharedElementSession {
         documentRect,
         rootOrigin,
         {
-          x: viewOriginX - rect.left,
-          y: viewOriginY - rect.top,
+          x: viewTransformOrigin.left - documentRect.left,
+          y: viewTransformOrigin.top - documentRect.top,
         },
       )
+
+      if (position === 'fixed' || position === 'sticky') {
+        wrapper.style.setProperty('position', 'fixed', 'important')
+        wrapper.style.setProperty('left', `${String(rect.left)}px`, 'important')
+        wrapper.style.setProperty('top', `${String(rect.top)}px`, 'important')
+      }
 
       try {
         originalParent.insertBefore(placeholder, element)
@@ -4573,6 +4779,8 @@ export class SharedElementSession {
           styleSnapshots,
           wrapper,
           animations: new Set<Animation>(),
+          position,
+          viewTransformOrigin,
         })
       } catch {
         wrapper.remove()
@@ -4581,7 +4789,7 @@ export class SharedElementSession {
         try {
           originalParent.insertBefore(element, originalNextSibling)
         } catch {
-          // The incoming route changed while promotion was being prepared.
+          element.remove()
         }
 
         restoreInlineStyles(styleSnapshots)
@@ -4589,6 +4797,174 @@ export class SharedElementSession {
     }
 
     this.applySharedStacking(true)
+  }
+
+  startPromotedTargetTracking(
+    view: HTMLElement,
+    signal: AbortSignal,
+  ): void {
+    this.releasePromotedTargetTracking?.()
+    this.releasePromotedTargetTracking = null
+
+    if (
+      this.cleaned
+      || signal.aborted
+      || !this.promotedTargetLayers.some((layer) => (
+        layer.position === 'fixed' || layer.position === 'sticky'
+      ))
+    ) {
+      return
+    }
+
+    const ownerWindow = view.ownerDocument.defaultView
+    const visualViewport = ownerWindow?.visualViewport
+
+    if (!ownerWindow) {
+      return
+    }
+
+    let frame = 0
+    let stopped = false
+
+    const scheduleTrailingAlignment = () => {
+      if (
+        frame
+        || stopped
+        || typeof ownerWindow.requestAnimationFrame !== 'function'
+      ) {
+        return
+      }
+
+      frame = ownerWindow.requestAnimationFrame(() => {
+        frame = 0
+
+        if (!stopped) {
+          this.alignPromotedTargetLayers()
+        }
+      })
+    }
+
+    const alignImmediately = () => {
+      if (stopped) {
+        return
+      }
+
+      this.alignPromotedTargetLayers()
+      scheduleTrailingAlignment()
+    }
+
+    const stop = () => {
+      if (stopped) {
+        return
+      }
+
+      stopped = true
+      signal.removeEventListener('abort', stop)
+      ownerWindow.removeEventListener('scroll', alignImmediately, true)
+      ownerWindow.removeEventListener('resize', alignImmediately)
+      ownerWindow.removeEventListener('orientationchange', alignImmediately)
+      visualViewport?.removeEventListener('scroll', alignImmediately)
+      visualViewport?.removeEventListener('resize', alignImmediately)
+
+      if (
+        frame
+        && typeof ownerWindow.cancelAnimationFrame === 'function'
+      ) {
+        ownerWindow.cancelAnimationFrame(frame)
+        frame = 0
+      }
+
+      if (this.releasePromotedTargetTracking === stop) {
+        this.releasePromotedTargetTracking = null
+      }
+    }
+
+    this.releasePromotedTargetTracking = stop
+    signal.addEventListener('abort', stop, { once: true })
+    ownerWindow.addEventListener('scroll', alignImmediately, true)
+    ownerWindow.addEventListener('resize', alignImmediately)
+    ownerWindow.addEventListener('orientationchange', alignImmediately)
+    visualViewport?.addEventListener('scroll', alignImmediately)
+    visualViewport?.addEventListener('resize', alignImmediately)
+
+    this.alignPromotedTargetLayers()
+  }
+
+  private alignPromotedTargetLayers(): void {
+    if (
+      this.cleaned
+      || this.promotedTargetLayers.length === 0
+      || !this.root.isConnected
+    ) {
+      return
+    }
+
+    for (const layer of this.promotedTargetLayers) {
+      if (
+        layer.position === 'document'
+        || !layer.placeholder.isConnected
+        || !layer.wrapper.isConnected
+      ) {
+        continue
+      }
+
+      let rect: SharedRect
+
+      try {
+        rect = copyRect(layer.placeholder.getBoundingClientRect())
+      } catch {
+        continue
+      }
+
+      if (!isUsableRect(rect)) {
+        continue
+      }
+
+      const documentRect = toDocumentRect(layer.placeholder, rect)
+      const changed = (
+        Math.abs(rect.left - layer.rect.left) > 0.05
+        || Math.abs(rect.top - layer.rect.top) > 0.05
+        || Math.abs(rect.width - layer.rect.width) > 0.05
+        || Math.abs(rect.height - layer.rect.height) > 0.05
+      )
+
+      if (!changed) {
+        continue
+      }
+
+      layer.rect = rect
+      layer.documentRect = documentRect
+
+      layer.wrapper.style.setProperty(
+        'left',
+        `${String(rect.left)}px`,
+        'important',
+      )
+      layer.wrapper.style.setProperty(
+        'top',
+        `${String(rect.top)}px`,
+        'important',
+      )
+      layer.wrapper.style.setProperty(
+        'width',
+        `${String(rect.width)}px`,
+        'important',
+      )
+      layer.wrapper.style.setProperty(
+        'height',
+        `${String(rect.height)}px`,
+        'important',
+      )
+      layer.wrapper.style.setProperty(
+        'transform-origin',
+        `${String(
+          layer.viewTransformOrigin.left - documentRect.left
+        )}px ${String(
+          layer.viewTransformOrigin.top - documentRect.top
+        )}px`,
+        'important',
+      )
+    }
   }
 
   async animatePromotedTargetLayers(
@@ -4630,6 +5006,9 @@ export class SharedElementSession {
   }
 
   private restorePromotedTargetLayers(): void {
+    this.releasePromotedTargetTracking?.()
+    this.releasePromotedTargetTracking = null
+
     for (const layer of [...this.promotedTargetLayers].reverse()) {
       cancelAnimations([...layer.animations])
 
@@ -4655,8 +5034,7 @@ export class SharedElementSession {
           layer.originalParent.insertBefore(layer.element, nextSibling)
         }
       } catch {
-        // If React already removed the incoming subtree, wrapper removal below
-        // safely removes the promoted node with it.
+        layer.element.remove()
       }
 
       restoreInlineStyles(layer.styleSnapshots)
@@ -4929,6 +5307,19 @@ export class SharedElementSession {
         continue
       }
 
+      const liveTargetRect = measureTargetRegistration(
+        target.registration,
+        target.opacity,
+      )
+
+      if (liveTargetRect) {
+        target.rect = liveTargetRect
+        target.documentRect = toDocumentRect(
+          target.registration.element,
+          liveTargetRect,
+        )
+      }
+
       const sourceViewportRect = source.handoffRect ?? source.rect
       const sourceDocumentRect = {
         ...sourceViewportRect,
@@ -5055,6 +5446,8 @@ export class SharedElementSession {
 
     this.cleaned = true
     this.releaseFixedTracking?.()
+    this.releasePromotedTargetTracking?.()
+    this.releasePromotedTargetTracking = null
     cancelAnimations([...this.sessionAnimations])
     this.sessionAnimations.clear()
     this.revealTargets()
@@ -5116,7 +5509,7 @@ export function createSharedElementSession(
     return null
   }
 
-  const snapshotClone = cloneVisualElement(view)
+  const snapshotClone = cloneSharedViewSnapshot(view)
 
   if (!snapshotClone) {
     return null
