@@ -6,15 +6,33 @@ Notable changes to Routeveil are documented here.
 
 **Shared Element Stability**
 
-Shared-element transitions now preserve their geometry more reliably while the incoming route settles.
+Shared element transitions are now significantly more reliable and responsive across mobile browsers, complex scrolling layouts, and layered sticky or fixed interface elements.
 
-### Fixed
+### Shared Elements
 
-- Stabilized shared-element scrolling across visual viewport and responsive layout changes
-- Waited for relevant image layout and decoding before measuring transition targets
-- Preserved fixed and sticky shared targets during scrolling and viewport changes
-- Kept page height, scroll range, and image geometry stable while viewport snapshots are active
-- Prevented same-page playback from resetting the document scroll position
+- Stabilized shared-element destinations across mobile Safari and Chrome
+- Prevented incoming layouts from shifting shared targets after movement completes
+- Improved shared-element positioning when navigating to content deep within scrollable pages
+- Preserved accurate handoff between moving clones and their incoming elements
+- Improved snapshot performance without changing outgoing page appearance
+- Reduced delays before shared-element exit transitions begin
+
+### Sticky and Fixed Layers
+
+- Kept higher z-index sticky and fixed elements above shared elements throughout transitions
+- Allowed promoted sticky and fixed elements to respond immediately while the user scrolls
+- Removed delayed positioning and snapping after enter or exit completes
+- Prevented persistent sticky interface outside RouteveilView from flashing during internal destination scrolling
+
+### Navigation and Layout
+
+- Added transitioned history navigation through useRouteveilNavigate(-1)
+- Added numeric history navigation support to RouteveilLink
+- Safely coordinated POP navigation with incoming route rendering and shared-element matching
+- Prevented outgoing pages from visibly scrolling while their exit transition is playing
+- Prevented incoming routes from inheriting the outgoing route's document height
+- Improved handling of lazy-loaded media that affects destination layout
+- Improved mobile viewport stabilization without changing shared-element movement semantics
 
 ### Installation
 

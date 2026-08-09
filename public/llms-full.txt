@@ -27,6 +27,7 @@ licensed under the MIT License.
 
 ## Release history
 
+- `0.4.1` (2026-08-08) — Shared Element Stability: Shared element transitions are now significantly more reliable and responsive across mobile browsers, complex scrolling layouts, and layered sticky or fixed interface elements.
 - `0.4.0` (2026-08-02) — Between Rendering: Routeveil can now render controlled React content between route exit and entry, with readiness holds, minimum timing, and same-page playback.
 - `0.3.1` (2026-07-31) — Transition Request Guard: Rapid repeated activations now reuse the active transition instead of restarting visual work or committing duplicate navigation.
 - `0.3.0` (2026-07-31) — Unified Transition API: A redesigned transition input unifies names, options, and independent page phases under one fully typed API.

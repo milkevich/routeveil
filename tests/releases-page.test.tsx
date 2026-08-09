@@ -16,6 +16,7 @@ import { RouteveilProvider } from '../src/react-router'
 import { installBrowserMocks } from './browser-mocks'
 
 const expectedReleases = [
+  ['0.4.1', '2026-08-08', 'Shared Element Stability'],
   ['0.4.0', '2026-08-02', 'Between Rendering'],
   ['0.3.1', '2026-07-31', 'Transition Request Guard'],
   ['0.3.0', '2026-07-31', 'Unified Transition API'],
@@ -119,11 +120,11 @@ describe('release registry', () => {
       release.date,
       release.title,
     ])).toEqual(expectedReleases)
-    expect(releases).toHaveLength(11)
-    expect(new Set(releases.map((release) => release.version)).size).toBe(11)
+    expect(releases).toHaveLength(12)
+    expect(new Set(releases.map((release) => release.version)).size).toBe(12)
     expect(new Set(releases.map((release) => (
       getReleaseId(release.version)
-    ))).size).toBe(11)
+    ))).size).toBe(12)
     expect(getReleaseId('0.10.12')).toBe('v0-10-12')
     expect(releases.every((release) => (
       /^\d{4}-\d{2}-\d{2}$/u.test(release.date)
@@ -214,7 +215,7 @@ describe('Releases page', () => {
       .toHaveTextContent(
         'See what changed, what shipped, and how Routeveil has evolved.',
       )
-    expect(entries).toHaveLength(11)
+    expect(entries).toHaveLength(12)
     expect(entries.map((entry) => entry.id)).toEqual(
       releases.map((release) => getReleaseId(release.version)),
     )
@@ -229,7 +230,7 @@ describe('Releases page', () => {
     expect(entries.map((entry) => (
       entry.querySelector('time')?.getAttribute('datetime')
     ))).toEqual(releases.map((release) => release.date))
-    expect(entries[0]?.querySelector('time')).toHaveTextContent('Aug 2, 2026')
+    expect(entries[0]?.querySelector('time')).toHaveTextContent('Aug 8, 2026')
 
     expect(desktopLinks.map((link) => (
       link.querySelector('.line-sidebar__text')?.textContent
@@ -279,8 +280,8 @@ describe('Releases page', () => {
       '.release-section h3:empty, .release-section p:empty, .release-section ul:empty',
     )).toHaveLength(0)
 
-    const latestEntry = view.container.querySelector('#v0-4-0')!
-    const latest = releaseWithVersion('0.4.0')
+    const latestEntry = view.container.querySelector('#v0-4-1')!
+    const latest = releaseWithVersion('0.4.1')
     const expectedItems = latest.sections
       .filter((section) => section.type === 'list')
       .flatMap((section) => section.items ?? [])
@@ -391,7 +392,7 @@ describe('Releases page', () => {
         height: 0,
         left: 0,
         right: 0,
-        top: index <= 4 ? 80 : 400,
+        top: index <= 5 ? 80 : 400,
         width: 0,
         x: 0,
         y: 0,
